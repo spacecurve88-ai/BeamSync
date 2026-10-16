@@ -1,0 +1,9 @@
+BeamSync Offline QR includes these locally bundled open-source browser libraries:
+
+qrcode-generator 1.4.4 — Kazuhiko Arase — MIT License
+Source: https://www.npmjs.com/package/qrcode-generator
+
+jsQR 1.4.0 — Cozmo — Apache License 2.0
+Source: https://www.npmjs.com/package/jsqr
+
+The bundled JavaScript files are unchanged copies of those published package versions. See the respective upstream projects for full license texts and notices.
