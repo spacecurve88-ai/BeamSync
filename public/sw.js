@@ -1,4 +1,4 @@
-const CACHE='beamsync-v10';
+const CACHE='beamsync-v11';
 const STATIC=[
   './manifest.webmanifest','./app.css',
   './js/core.js','./js/pairing.js','./js/transfer.js','./js/main.js',
