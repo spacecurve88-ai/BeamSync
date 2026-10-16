@@ -1,0 +1,83 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e9eef7;
+  background: #0b0e14;
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0%, #161c2c 0, #0b0e14 38rem); }
+button, textarea, input { font: inherit; }
+button { cursor: pointer; }
+.shell { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 46px; }
+.topbar { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:22px; }
+.brand { display:flex; align-items:center; gap:13px; }
+.logo { width:46px; height:46px; border-radius:15px; display:grid; place-items:center; font-size:25px; font-weight:800; background:#eef3ff; color:#101522; box-shadow: 0 12px 28px rgba(0,0,0,.25); }
+h1,h2,h3,p { margin:0; }
+h1 { font-size:21px; letter-spacing:-.03em; }
+.brand p { color:#8d98ab; font-size:13px; margin-top:2px; }
+.badge { padding:8px 11px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid #293247; background:#121827; }
+.badge.online { color:#b9ffd7; border-color:#285d43; background:#10251a; }
+.badge.offline { color:#ffc6c6; border-color:#693535; background:#2b1515; }
+.badge.connecting { color:#f3dda3; border-color:#665424; background:#2b2512; }
+.card { border:1px solid #20283a; background:rgba(17,22,33,.88); border-radius:22px; box-shadow:0 18px 50px rgba(0,0,0,.18); backdrop-filter: blur(12px); }
+.hero { display:grid; grid-template-columns:1fr auto; gap:30px; align-items:center; padding:30px; }
+.eyebrow { font-size:11px; letter-spacing:.16em; font-weight:800; color:#7f8aa0; margin-bottom:8px; }
+h2 { font-size:clamp(25px, 4vw, 39px); line-height:1.08; letter-spacing:-.045em; max-width:720px; }
+h3 { font-size:18px; letter-spacing:-.02em; }
+.muted { color:#8f9aae; }
+.small { font-size:12px; }
+.hero .muted { max-width:720px; margin-top:12px; line-height:1.6; }
+.identity { min-width:220px; padding:17px; border-radius:17px; background:#0d111a; border:1px solid #222b3e; }
+.aliasButton { display:block; width:100%; text-align:left; border:0; color:#edf3ff; background:transparent; padding:5px 0 12px; font-weight:800; font-size:15px; }
+.toggleRow { display:flex; align-items:center; gap:8px; color:#9da7b8; font-size:12px; border-top:1px solid #20283a; padding-top:11px; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px; }
+.panel { min-height:350px; padding:22px; }
+.sectionHead { display:flex; justify-content:space-between; align-items:center; gap:15px; padding-bottom:17px; border-bottom:1px solid #20283a; }
+.iconButton,.textButton { border:1px solid #2a3347; background:#131927; color:#d9e2f3; border-radius:11px; }
+.iconButton { width:38px; height:38px; font-size:18px; }
+.textButton { padding:7px 10px; font-size:12px; }
+.peerList,.transferList { display:flex; flex-direction:column; gap:10px; padding-top:14px; }
+.emptyState { color:#748096; font-size:13px; line-height:1.5; padding:30px 8px; text-align:center; }
+.peer { display:flex; align-items:center; gap:12px; width:100%; padding:12px; border:1px solid #252e41; border-radius:15px; background:#0f141f; color:#eaf0fa; text-align:left; }
+.peer:hover,.peer.selected { border-color:#60739b; background:#151c2a; }
+.peerIcon { width:42px; height:42px; border-radius:13px; display:grid; place-items:center; background:#1c2435; color:#bdc9de; font-size:20px; }
+.peerMeta { min-width:0; flex:1; }
+.peerName { font-weight:760; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.peerModel { font-size:12px; color:#778399; margin-top:3px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.peerCheck { color:#9fb1d5; opacity:0; }
+.peer.selected .peerCheck { opacity:1; }
+.transfer { padding:12px; border:1px solid #242d40; border-radius:14px; background:#0e131d; }
+.transferTop { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.transferName { font-size:13px; font-weight:760; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.transferStatus { font-size:11px; color:#8d99ae; flex-shrink:0; }
+.progressTrack { height:6px; margin-top:9px; background:#1d2534; border-radius:999px; overflow:hidden; }
+.progressBar { height:100%; width:0%; background:#d9e5ff; transition:width .12s linear; }
+.transfer.error .progressBar { background:#ffabab; }
+.transfer.done .progressBar { background:#b9ffd7; }
+.downloadLink { display:inline-block; color:#c8d7f3; font-size:12px; margin-top:8px; }
+.noteCard { white-space:pre-wrap; color:#dbe3f1; font-size:13px; line-height:1.55; margin-top:8px; padding:10px; border-radius:10px; background:#161d2a; }
+.composer { margin-top:18px; padding:22px; display:flex; justify-content:space-between; align-items:center; gap:20px; }
+.composer .muted { margin-top:5px; font-size:13px; }
+.composerActions { display:flex; gap:10px; }
+.primaryButton,.secondaryButton { border-radius:12px; padding:11px 15px; font-weight:760; border:1px solid transparent; }
+.primaryButton { background:#edf3ff; color:#111723; }
+.secondaryButton { background:#131a27; color:#dbe4f5; border-color:#2a3448; }
+.primaryButton:disabled,.secondaryButton:disabled { opacity:.35; cursor:not-allowed; }
+.footnote { color:#68758b; font-size:11px; line-height:1.55; padding:16px 4px 0; }
+dialog { border:0; padding:0; border-radius:18px; background:#111722; color:#edf3ff; width:min(520px, calc(100% - 30px)); box-shadow:0 30px 90px #000; }
+dialog::backdrop { background:rgba(0,0,0,.7); backdrop-filter:blur(5px); }
+.dialogCard { padding:22px; }
+.dialogCard h3 { margin-bottom:13px; }
+textarea { width:100%; resize:vertical; border-radius:12px; border:1px solid #2b3549; background:#0b0f17; color:#edf3ff; padding:12px; outline:none; }
+textarea:focus { border-color:#7187af; }
+.dialogActions { display:flex; justify-content:flex-end; gap:9px; margin-top:13px; }
+@media (max-width: 760px) {
+  .shell { width:min(100% - 20px, 1100px); padding-top:16px; }
+  .brand p { display:none; }
+  .hero { grid-template-columns:1fr; padding:22px; }
+  .identity { min-width:0; }
+  .grid { grid-template-columns:1fr; }
+  .composer { align-items:flex-start; flex-direction:column; }
+  .composerActions { width:100%; }
+  .composerActions button { flex:1; }
+}
