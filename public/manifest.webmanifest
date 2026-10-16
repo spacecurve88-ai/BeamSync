@@ -1,15 +1,14 @@
 {
-  "name": "BeamSync Offline QR",
+  "name": "BeamSync",
   "short_name": "BeamSync",
-  "description": "Direct browser-to-browser file transfer with QR signaling and WebRTC.",
+  "description": "Direct browser-to-browser file transfer with Quick Connect and Direct QR.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f5f7fb",
+  "background_color": "#f4f7fb",
   "theme_color": "#2f6fed",
-  "orientation": "any",
   "icons": [
-    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png"}
   ]
 }
