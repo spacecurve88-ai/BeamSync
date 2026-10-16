@@ -1,11 +1,11 @@
 {
   "name": "BeamSync",
   "short_name": "BeamSync",
-  "description": "Direct browser-to-browser file transfer with Quick Connect and Direct QR.",
+  "description": "Direct browser-to-browser file transfer using QR-based WebRTC pairing.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f7fb",
+  "background_color": "#f7f9fc",
   "theme_color": "#2f6fed",
   "icons": [
     {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png"},

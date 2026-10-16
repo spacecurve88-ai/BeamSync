@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="beamsync-app" content="v8">
+<meta name="beamsync-app" content="v13">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#2f6fed">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -27,38 +27,12 @@
 
   <main>
     <section class="card hero">
-      <div class="mode-tabs" role="tablist" aria-label="Pairing mode">
-        <button id="tabQuick" class="tab active">Quick Connect</button>
-        <button id="tabDirect" class="tab">Direct QR</button>
-      </div>
-      <div id="modeSummary" class="mode-summary">Fast pairing using encrypted temporary signaling. Files still transfer directly peer-to-peer.</div>
+      <div class="mode-summary"><strong>Direct QR only.</strong> WebRTC setup is exchanged between the two screens. BeamSync has no signaling backend and does not upload file bytes to a transfer server.</div>
     </section>
 
-    <section id="quickPanel" class="card">
-      <h2>Quick Connect</h2>
-      <p class="help">Best for normal use and remote devices. BeamSync temporarily stores only encrypted WebRTC setup data; file bytes remain peer-to-peer.</p>
-      <div class="choice-grid">
-        <div class="choice">
-          <h3>Start a connection</h3>
-          <p>Create a private pairing code and QR.</p>
-          <button id="quickStart">Create pairing code</button>
-        </div>
-        <div class="choice">
-          <h3>Join a connection</h3>
-          <p>Enter the code shown on the other device.</p>
-          <input id="quickCode" inputmode="text" autocomplete="off" maxlength="19" placeholder="ABCD-EFGH-JKLM-NPQR">
-          <div class="actions"><button id="quickJoin" class="alt">Join</button><button id="quickScan" class="ghost">Scan QR</button></div>
-        </div>
-      </div>
-      <div id="quickInvite" class="invite hidden">
-        <div><span class="label">Pairing code</span><div id="quickCodeShow" class="big-code"></div><p class="help">Expires after about 10 minutes. The code itself is never sent to the signaling API.</p></div>
-        <div><div id="quickQr" class="small-qr"></div></div>
-      </div>
-    </section>
-
-    <section id="directPanel" class="card hidden">
+    <section id="directPanel" class="card">
       <h2>Direct QR</h2>
-      <p class="help">No BeamSync signaling backend. The offer and answer travel visually between the two screens.</p>
+      <p class="help">The offer and answer travel visually between the two screens. Same Wi-Fi / hotspot mode can work without public internet after BeamSync is cached locally.</p>
       <label class="field"><span>Network mode</span>
         <select id="directNetwork">
           <option value="lan">Same Wi-Fi / hotspot — no STUN</option>
@@ -96,7 +70,7 @@
       </div>
 
       <details class="details"><summary>Manual / technical fallback</summary>
-        <p class="help">For Direct QR only. Copy the exact BSQ handshake if camera scanning is unavailable.</p>
+        <p class="help">Copy the exact BSQ handshake if camera scanning is unavailable.</p>
         <textarea id="manualOut" readonly placeholder="This device's handshake"></textarea><div class="actions"><button id="copyManual" class="ghost">Copy</button></div>
         <textarea id="manualIn" placeholder="Paste the other device's handshake"></textarea><div class="actions"><button id="applyManual" class="alt">Apply pasted handshake</button></div>
       </details>
@@ -143,7 +117,7 @@
 
     <details class="card details">
       <summary>Diagnostics</summary>
-      <pre id="log">BeamSync v8 diagnostics</pre>
+      <pre id="log">BeamSync v13 diagnostics</pre>
     </details>
   </main>
 </div>

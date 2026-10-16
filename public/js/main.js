@@ -1,17 +1,11 @@
 (()=>{
 'use strict';
-const C=window.BeamSyncCore,P=window.BeamSyncPairing,T=window.BeamSyncTransfer,{$,S,show,log,status,normalizeCode,formatCode}=C;
+const C=window.BeamSyncCore,P=window.BeamSyncPairing,T=window.BeamSyncTransfer,{$,show,log,status}=C;
 let offlineReady=false,deferredInstall=null;
 
 function resetAll(){P.resetPairing();T.resetTransfers()}
 function wrap(fn){return()=>Promise.resolve(fn()).catch(e=>status(e?.message||String(e),'err'))}
 
-$('tabQuick').onclick=()=>P.setPairing('quick');
-$('tabDirect').onclick=()=>P.setPairing('direct');
-$('quickStart').onclick=wrap(P.quickStart);
-$('quickJoin').onclick=wrap(()=>P.quickJoin());
-$('quickScan').onclick=wrap(P.quickScan);
-$('quickCode').oninput=e=>{e.target.value=formatCode(normalizeCode(e.target.value).slice(0,16))};
 $('directStart').onclick=wrap(P.directStart);
 $('directJoin').onclick=wrap(P.directJoin);
 $('qrPrev').onclick=()=>P.qrStep(-1);
@@ -39,6 +33,5 @@ async function setupOffline(){updateOnline();window.addEventListener('online',up
 
 if(typeof qrcode!=='function')log('QR generator did not load.');
 if(typeof jsQR!=='function')log('QR decoder did not load.');
-P.setPairing('quick');
 setupOffline().catch(e=>log('Offline setup: '+e.message));
 })();
