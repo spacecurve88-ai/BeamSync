@@ -13,9 +13,9 @@ export default async function (req, res) {
   const enabled = (live || host === draftHost) &&
     (req.headers.origin === undefined || req.headers.origin === 'https://' + host);
   const rooms = roomStore(db, live);
-  const schedulePrune = async () => {
+  const schedulePrune = async deadline => {
     // One-shot shared by this minute's invites. No permanent schedule and no file content.
-    const tick = Math.ceil((Date.now() + 240000) / 60000);
+    const tick = Math.ceil((deadline + 60000) / 60000);
     await scheduler.at(new Date(tick * 60000), '/api/jobs/quick-pair-expire',
       {name:'beamsync-expire-' + tick, payload:{}});
   };
