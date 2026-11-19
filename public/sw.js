@@ -1,17 +1,18 @@
 // A release uses its own asset URLs and cache. Keep v13's separate cache available for rollback.
-const release = '14-r10';
+const release = '14-r14';
 const cacheName = 'beamsync-v' + release;
 const readyKey = '/__beamsync_package_ready__';
 const shells = new Map([['/','/index.html'],['/index.html','/index.html'],['/classic.html','/classic.html']]);
 const assets = [
   '/ui.css','/app.css','/app.js','/ui.js','/manifest.webmanifest',
-  '/js/core.js','/js/pairing.js','/js/main.js','/js/transfer.js','/js/sha256.js','/js/recovery.js',
+  '/js/core.js','/js/image-preflight.js','/js/pairing.js','/js/main.js','/js/transfer.js','/js/sha256.js','/js/recovery.js',
   '/js/devices.js','/js/share.js','/js/signal.js','/js/quick-pair.js',
   '/vendor/jsQR.js','/vendor/qrcode.min.js','/icons/apple-touch-icon.png','/icons/icon-192.png','/icons/icon-512.png'
 ];
-const releaseAssets = new Set(assets.map(path => path + '?v=' + release));
+const releaseAssets = new Set([...assets, '/js/storage-worker.js'].map(path => path + '?v=' + release));
 const previousAssets = new Map();
-for (const previousRelease of ['14-r9','14-r8','14-r7','14-r6','14-r5','14-r4']) {
+for (const previousRelease of ['14-r13','14-r12','14-r11','14-r10','14-r9','14-r8','14-r7','14-r6','14-r5','14-r4']) {
+  if (['14-r11','14-r12','14-r13'].includes(previousRelease)) previousAssets.set('/js/storage-worker.js?v=' + previousRelease, previousRelease);
   for (const asset of assets) previousAssets.set(asset + '?v=' + previousRelease, previousRelease);
 }
 const packagePaths = [...releaseAssets, '/index.html', '/classic.html'];
