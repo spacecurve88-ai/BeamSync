@@ -33,7 +33,9 @@
         const s1 = rotate(y,17) ^ rotate(y,19) ^ (y >>> 10);
         w[i] = w[i-16] + s0 + w[i-7] + s1;
       }
-      let [a,b,c,d,e,f,g,h] = this.state;
+      const s = this.state;
+      let a=s[0], b=s[1], c=s[2], d=s[3];
+      let e=s[4], f=s[5], g=s[6], h=s[7];
       for (let i = 0; i < 64; i++) {
         const s1 = rotate(e,6) ^ rotate(e,11) ^ rotate(e,25);
         const t1 = (h + s1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
@@ -41,7 +43,6 @@
         const t2 = s0 + ((a & b) ^ (a & c) ^ (b & c));
         h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;
       }
-      const s = this.state;
       s[0]+=a; s[1]+=b; s[2]+=c; s[3]+=d; s[4]+=e; s[5]+=f; s[6]+=g; s[7]+=h;
     }
     update(input) {
