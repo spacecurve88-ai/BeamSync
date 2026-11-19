@@ -84,7 +84,23 @@ function stopCamera() {
 }
 function decodeCanvas(c){if(typeof jsQR!=='function')throw Error('QR decoder unavailable.');const ctx=c.getContext('2d',{willReadFrequently:true}),im=ctx.getImageData(0,0,c.width,c.height),r=jsQR(im.data,im.width,im.height,{inversionAttempts:'attemptBoth'});return r?.data||null}
 async function scanLoop(){if(!cameraStream)return;const v=$('video'),c=$('canvas');if(v.readyState>=2&&v.videoWidth){const scale=Math.min(1,900/v.videoWidth);c.width=Math.floor(v.videoWidth*scale);c.height=Math.floor(v.videoHeight*scale);c.getContext('2d').drawImage(v,0,0,c.width,c.height);try{const q=decodeCanvas(c);if(q&&q!==lastScan){lastScan=q;await handleScanned(q);addTimer(()=>{if(lastScan===q)lastScan=''},1000)}}catch(e){log(e.message)}}scanRaf=requestAnimationFrame(scanLoop)}
-async function scanImage(file){if(file.size>20*1024*1024)throw Error('Choose a QR photo under 20 MiB.');const epoch=cameraEpoch,bmp=await createImageBitmap(file),c=$('canvas'),scale=Math.min(1,1600/Math.max(bmp.width,bmp.height));c.width=Math.floor(bmp.width*scale);c.height=Math.floor(bmp.height*scale);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);bmp.close();const q=decodeCanvas(c);if(!q)throw Error('No QR code found in that image.');if(epoch===cameraEpoch)await handleScanned(q)}
+async function scanImage(file){
+  const epoch=cameraEpoch;
+  await window.BeamSyncImagePreflight.inspect(file,{maxBytes:20*1024*1024,sizeMessage:'Choose a QR photo under 20 MiB.'});
+  if(epoch!==cameraEpoch)return;
+  const bmp=await createImageBitmap(file);
+  let c;
+  try{
+    if(epoch!==cameraEpoch)return;
+    c=$('canvas');const scale=Math.min(1,1600/Math.max(bmp.width,bmp.height));
+    c.width=Math.floor(bmp.width*scale);c.height=Math.floor(bmp.height*scale);
+    c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  }finally{bmp.close()}
+  if(!c)return;
+  const q=decodeCanvas(c);
+  if(!q)throw Error('No QR code found in that image.');
+  if(epoch===cameraEpoch)await handleScanned(q);
+}
 async function handleScanned(text){if(text.startsWith('BSQ8|')){const x=ingestQr(text);if(x)await handleDirectQr(x);return}log('Unrecognized QR ignored.')}
 function manualApply(){try{if($('manualIn').value.length>17500)throw Error('Pairing code is too large.');const s=$('manualIn').value.trim(),x=s.split('|');if(x[0]!=='BSQ8TEXT'||!['O','A','R','S'].includes(x[1])||!x[2]||x.length!==3)throw Error('Paste a complete BSQ8TEXT handshake.');handleDirectQr({kind:x[1],sid:'manual',payload:x.slice(2).join('|')}).catch(e=>status(e.message,'err'))}catch(e){status(e.message,'err')}}
 

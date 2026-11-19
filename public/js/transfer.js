@@ -6,6 +6,60 @@
   const DIGEST = /^[a-f0-9]{64}$/, NONCE = /^[a-f0-9]{32}$/, ID = /^[a-zA-Z0-9_-]{1,64}$/;
   let active = null;
   const downloads = [];
+  let lastTimings = null;
+  function startTimings(job) {
+    job.timing = {accepted:performance.now(), firstPayload:null, payloadBytes:0, reusedBytes:0,
+      stages:{}, inProgress:new Map(), stores:new Set()};
+  }
+  async function measure(job, stage, operation) {
+    const timing = job.timing;
+    const began = performance.now();
+    timing.inProgress.set(stage,began);
+    try { return await operation(); }
+    finally {
+      timing.stages[stage] = (timing.stages[stage] || 0) + performance.now() - began;
+      timing.inProgress.delete(stage);
+    }
+  }
+  function countPayload(job, length) {
+    const timing = job.timing;
+    if (timing.firstPayload === null) timing.firstPayload = performance.now();
+    timing.payloadBytes += length;
+  }
+  function reportTimings(job, outcome) {
+    const timing = job.timing;
+    if (!timing) return;
+    const end = performance.now(), stages = {...timing.stages};
+    for (const [stage, start] of timing.inProgress) stages[stage] = (stages[stage] || 0) + end - start;
+    for (const stage of Object.keys(stages)) stages[stage] = Math.round(stages[stage]);
+    lastTimings = Object.freeze({
+      direction:job.direction, outcome, fileCount:job.meta.length,
+      payloadBytes:timing.payloadBytes, reusedBytes:timing.reusedBytes,
+      elapsedMs:Math.round(end-timing.accepted),
+      firstPayloadMs:timing.firstPayload === null ? null : Math.round(timing.firstPayload-timing.accepted),
+      stagesMs:Object.freeze(stages), storage:Object.freeze([...timing.stores])
+    });
+    const output = $('transfer-timings');
+    if (!output) return;
+    const seconds = n => (n/1000).toFixed(2)+' s';
+    const stageLabels = {
+      index:'Checking source', prepare:'Opening storage and checking saved parts',
+      proof:'Proving saved parts', receipts:'Waiting for block receipts',
+      append:'Verifying and writing blocks', finish:'Final storage check and assembly'
+    };
+    const lines = [
+      (job.direction==='send'?'Send':'Receive')+' · '+outcome,
+      'Since acceptance: '+seconds(lastTimings.elapsedMs),
+      'New file data: '+fmtBytes(timing.payloadBytes)
+    ];
+    if (lastTimings.firstPayloadMs !== null) lines.push('First file data: '+seconds(lastTimings.firstPayloadMs));
+    if (timing.reusedBytes) lines.push('Previously saved: '+fmtBytes(timing.reusedBytes));
+    if (timing.stores.size) lines.push('Storage: '+[...timing.stores].join(', '));
+    for (const [stage, label] of Object.entries(stageLabels)) {
+      if (stage in stages) lines.push(label+': '+seconds(stages[stage]));
+    }
+    output.textContent = lines.join('\n'); output.hidden = false;
+  }
 
   function emit(type, fields = {}) {
     window.dispatchEvent(new CustomEvent('beamsync-transfer', { detail: { type, ...fields } }));
@@ -98,7 +152,7 @@
     if (!dc || dc.readyState !== 'open') throw Error('Connect the devices first.');
     if (active) throw Error('Another file transfer is in progress.');
     const job = {id,direction,dc,controller:new AbortController(),phase:'proposal',next:0,doneBytes:0,
-      queue:Promise.resolve(),queued:0,queuedCount:0,writer:null,waiter:null,file:null,...data};
+      queue:Promise.resolve(),queued:0,queuedControl:0,queuedCount:0,writer:null,waiter:null,file:null,...data};
     job.onClose = () => stop(job,'Connection lost. Reconnect and offer the same file again.','error',true,false);
     dc.addEventListener('close',job.onClose);
     active = job;
@@ -121,6 +175,7 @@
   }
   function stop(job, message, level, keep, inform = true) {
     if (!job || !release(job,keep)) return;
+    reportTimings(job,level);
     job.keep = keep;
     if (inform) notify(job.dc, {t:'transfer-abort',id:job.id,keep:!!keep,failed:level==='error',
       reason:job.storageFailure ? 'receiver-storage' : undefined});
@@ -133,7 +188,9 @@
     state(job.direction,level,message);
   }
   function complete(job) {
-    if (release(job)) state(job.direction,'success','All files were received and verified.');
+    if (!release(job)) return;
+    reportTimings(job,'verified');
+    state(job.direction,'success','All files were received and verified.');
   }
   function renderOffer(job) {
     const list = $('incomingList');
@@ -180,6 +237,7 @@
       job.recover = job.modern && (options.recover ?? !!$('retainCheckpoints')?.checked);
       job.peer = typeof options.peer === 'string' ? options.peer : undefined;
       job.phase = 'accepted';
+      startTimings(job);
       control(job.dc,{t:'proposal-response',id:job.id,accept:true,v:14});
       visible('incomingOffer',false);
       emit('offer-closed',{id:job.id});
@@ -269,7 +327,7 @@
       assertActive(job);
       const blob = job.files[i], file = job.meta[i], fileId = job.id+':'+i;
       state('send','active','Checking '+file.name+' before sending.');
-      const {digest,prefixes} = await indexFile(job,blob);
+      const {digest,prefixes} = await measure(job,'index',()=>indexFile(job,blob));
       assertActive(job);
       const base = {transferId:job.id,fileId};
       const startMessage = {t:'file-start',...base,...file,sha256:digest,index:i,count:job.meta.length};
@@ -286,13 +344,16 @@
           if (typeof ready.nonce !== 'string' || !NONCE.test(ready.nonce)) throw Error('Invalid checkpoint challenge.');
           // Demonstrate possession of the saved bytes, including when the
           // checkpoint already covers the whole file. A known digest is insufficient.
-          const proof = new BeamSHA256().update(new TextEncoder().encode(ready.nonce));
-          for (let pos=0;pos<offset;pos+=BLOCK) {
-            assertActive(job);
-            proof.update(new Uint8Array(await blob.slice(pos,Math.min(offset,pos+BLOCK)).arrayBuffer()));
-            resetTimer(job);
-          }
-          await request(job,{t:'file-proof',...base,proof:proof.hex()},'file-proof-ok',identity);
+          await measure(job,'proof',async () => {
+            const proof = new BeamSHA256().update(new TextEncoder().encode(ready.nonce));
+            for (let pos=0;pos<offset;pos+=BLOCK) {
+              assertActive(job);
+              proof.update(new Uint8Array(await blob.slice(pos,Math.min(offset,pos+BLOCK)).arrayBuffer()));
+              resetTimer(job);
+            }
+            await request(job,{t:'file-proof',...base,proof:proof.hex()},'file-proof-ok',identity);
+          });
+          job.timing.reusedBytes += offset;
         }
       } else control(job.dc,startMessage);
       progress(job,file,offset);
@@ -303,11 +364,14 @@
         for (let pos=0;pos<part.length;pos+=frameSize) {
           await waitDrain(job,flow);
           assertActive(job);
-          rawSend(job.dc,part.subarray(pos,pos+frameSize));
+          const frame = part.subarray(pos,pos+frameSize);
+          rawSend(job.dc,frame);
+          countPayload(job,frame.byteLength);
         }
         offset += part.length;
         if (job.modern) {
-          const receipt = await request(job,{t:'file-block',...base,offset,sha256:checksum},'block-ok',identity);
+          const receipt = await measure(job,'receipts',() =>
+            request(job,{t:'file-block',...base,offset,sha256:checksum},'block-ok',identity));
           if (receipt.offset !== offset || receipt.sha256 !== checksum) throw Error('The checkpoint receipt did not match.');
         }
         resetTimer(job);
@@ -334,6 +398,7 @@
       return;
     }
     job.phase = 'accepted';
+    startTimings(job);
     job.modern = m.v === 14;
     sendJob(job).catch(e=>stop(job,failureText(e,'send'),'error',transportLost(job) || storageFailure(e)));
   }
@@ -346,14 +411,15 @@
         typeof m.sha256 !== 'string' || !DIGEST.test(m.sha256)) throw Error('Incoming file does not match the accepted offer.');
     const hash = new BeamSHA256(), nonce = randId(16);
     const prefixProof = new BeamSHA256().update(new TextEncoder().encode(nonce));
-    const writer = await window.BeamSyncRecovery.open({...file,sha256:m.sha256},{
+    const writer = await measure(job,'prepare',() => window.BeamSyncRecovery.open({...file,sha256:m.sha256},{
       resumable:!!job.recover, peer:job.peer, signal:job.controller.signal, onPrefix:bytes=>{hash.update(bytes); prefixProof.update(bytes); resetTimer(job);}
-    });
+    }));
     if (active !== job) {
       await (job.keep ? writer.interrupt() : writer.discard());
       return;
     }
     job.writer = writer;
+    if (writer.backend) job.timing.stores.add(writer.backend);
     job.file = {metadata:file,fileId,hash,digest:m.sha256,received:writer.offset,parts:[],pending:0,proof:writer.offset ? prefixProof.hex() : null};
     if (job.modern) control(job.dc,{t:'file-ready',transferId:job.id,fileId,offset:writer.offset,prefix:hash.hex(),nonce:writer.offset ? nonce : undefined});
     state('receive','active',writer.offset?'Resuming '+file.name+'.':'Receiving '+file.name+'.');
@@ -368,7 +434,7 @@
   async function saveBlock(job,expected) {
     const f = job.file;
     const data = new Blob(f.parts);
-    const checksum = await job.writer.append(data,expected);
+    const checksum = await measure(job,'append',() => job.writer.append(data,expected));
     assertActive(job);
     f.parts = [];
     f.pending = 0;
@@ -383,6 +449,7 @@
     assertActive(job);
     const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
     if (bytes.byteLength !== length) throw Error('Invalid file frame.');
+    countPayload(job,length);
     f.hash.update(bytes);
     // Legacy frames may straddle block boundaries. Modern frames cannot begin
     // another block until the preceding authenticated block was acknowledged.
@@ -409,8 +476,11 @@
     const sha256 = await saveBlock(job,m.sha256);
     control(job.dc,{t:'block-ok',transferId:job.id,fileId:f.fileId,offset:f.received,sha256});
   }
-  function displayFile(file) {
-    downloads.push(file);
+  function releaseFile(blob) {
+    if (blob) Promise.resolve(window.BeamSyncRecovery.releaseFile?.(blob)).catch(() => {});
+  }
+  function displayFile(file, blob) {
+    downloads.push({...file,blob});
     const box = $('received');
     if (box) {
       const link = document.createElement('a');
@@ -424,21 +494,33 @@
   async function finishFile(job,m) {
     const f = checkCurrent(job,m);
     if (f.proof || f.pending || f.received !== f.metadata.size || f.hash.hex() !== f.digest) throw Error('File integrity check failed.');
-    const blob = await job.writer.finish();
-    assertActive(job);
-    if (blob.size !== f.metadata.size) throw Error('Saved file size differs from the accepted file.');
-    displayFile({name:f.metadata.name,size:blob.size,sha256:f.digest,url:URL.createObjectURL(blob)});
+    const blob = await measure(job,'finish',() => job.writer.finish(f.digest));
+    let url;
+    try {
+      assertActive(job);
+      if (blob.size !== f.metadata.size) throw Error('Saved file size differs from the accepted file.');
+      url = URL.createObjectURL(blob);
+      displayFile({name:f.metadata.name,size:blob.size,sha256:f.digest,url},blob);
+    } catch (error) {
+      if (!url || !downloads.some(file => file.url === url)) {
+        if (url) URL.revokeObjectURL(url);
+        releaseFile(blob);
+      }
+      throw error;
+    }
     job.writer = null;
     job.file = null;
     job.next++;
     job.doneBytes += blob.size;
     control(job.dc,{t:'file-confirm',transferId:job.id,fileId:f.fileId,ok:true,sha256:f.digest});
   }
-  function enqueue(job,operation,bytes=0) {
+  function enqueue(job,operation,bytes=0,controlBytes=0) {
     if (job.phase !== 'accepted') return;
     job.queued += bytes;
+    job.queuedControl += controlBytes;
     job.queuedCount++;
-    if (job.queued > 16*BLOCK || job.queuedCount > 2048) {
+    // Total queue bytes cover both binary and control frames; controls also have a tighter budget.
+    if (job.queued > 16*BLOCK || job.queuedControl > 256*1024 || job.queuedCount > 2048) {
       stop(job,'Receiver could not keep up. Reconnect and retry.','error',true);
       return;
     }
@@ -455,7 +537,7 @@
       const keep = transportLost(job) || job.storageFailure;
       if (!keep && active === job && job.file) notify(job.dc,{t:'file-confirm',transferId:job.id,fileId:job.file.fileId,ok:false,sha256:''});
       stop(job,failureText(e,'receive'),'error',keep);
-    }).finally(()=>{job.queued-=bytes;job.queuedCount--;});
+    }).finally(()=>{job.queued-=bytes;job.queuedControl-=controlBytes;job.queuedCount--;});
   }
   function appendChat(who,text) {
     const chat = $('chat');
@@ -494,6 +576,12 @@
       if (job) stop(job,'Oversized control message.','error',false);
       return;
     }
+    // String length is not its wire size: count UTF-8 bytes before parsing or queueing.
+    const controlBytes = new TextEncoder().encode(data).byteLength;
+    if (controlBytes > MAX_CONTROL) {
+      if (job) stop(job,'Oversized control message.','error',false);
+      return;
+    }
     let m;
     try { m = JSON.parse(data); } catch { return; }
     if (!m || typeof m !== 'object' || Array.isArray(m)) return;
@@ -521,16 +609,18 @@
       }
       return;
     }
-    if (m.t === 'file-start') enqueue(job,()=>beginFile(job,m));
-    else if (m.t === 'file-proof') enqueue(job,()=>{
+    const queueControl = operation => enqueue(job,operation,controlBytes,controlBytes);
+    if (m.t === 'file-start') queueControl(()=>beginFile(job,m));
+    else if (m.t === 'file-proof') queueControl(()=>{
       const f = checkCurrent(job,m);
       if (!f.proof || m.proof !== f.proof) throw Error('The selected source does not match the saved checkpoint.');
+      job.timing.reusedBytes += f.received;
       f.proof = null;
       control(job.dc,{t:'file-proof-ok',transferId:job.id,fileId:f.fileId});
     });
-    else if (m.t === 'file-block') enqueue(job,()=>verifyBlock(job,m));
-    else if (m.t === 'file-end') enqueue(job,()=>finishFile(job,m));
-    else if (m.t === 'transfer-complete') enqueue(job,()=>{
+    else if (m.t === 'file-block') queueControl(()=>verifyBlock(job,m));
+    else if (m.t === 'file-end') queueControl(()=>finishFile(job,m));
+    else if (m.t === 'transfer-complete') queueControl(()=>{
       if (m.id !== job.id || job.next !== job.meta.length || job.file) throw Error('Transfer ended before all accepted files were verified.');
       if (job.modern) control(job.dc,{t:'transfer-confirm',id:job.id});
       complete(job);
@@ -548,7 +638,10 @@
     else if (active) stop(active,'Transfer cancelled.','cancelled',false);
   }
   function clearReceived() {
-    for (const file of downloads) URL.revokeObjectURL(file.url);
+    for (const file of downloads) {
+      URL.revokeObjectURL(file.url);
+      releaseFile(file.blob);
+    }
     downloads.length=0;
     $('received')?.replaceChildren();
     emit('cleared');
@@ -559,5 +652,5 @@
     if (!event.persisted) clearReceived();
   });
   window.BeamSyncTransfer = {sendMessage,offerFiles:()=>sendFiles($('files')?.files),sendFiles,acceptFiles,
-    declineFiles,resetTransfers,cancelTransfer,clearReceived,onMessage,MAX_FILE,MAX_TOTAL};
+    declineFiles,resetTransfers,cancelTransfer,clearReceived,onMessage,getLastTimings:()=>lastTimings,MAX_FILE,MAX_TOTAL};
 })();

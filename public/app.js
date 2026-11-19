@@ -1,4 +1,4 @@
-import {createUI} from './ui.js?v=14-r10';
+import {createUI} from './ui.js?v=14-r14';
 
 const C = window.BeamSyncCore;
 const P = window.BeamSyncPairing;
@@ -238,7 +238,7 @@ function offlineReady() {
 async function installOffline() {
   if (!('serviceWorker' in navigator)) { ui.offline('Offline installation is unavailable in this browser.'); return; }
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data?.cache !== 'beamsync-v14-r10') return;
+    if (e.data?.cache !== 'beamsync-v14-r14') return;
     if (e.data.type === 'OFFLINE_READY') offlineReady();
     if (e.data?.type === 'OFFLINE_CACHE_ERROR') ui.offline('Offline setup is incomplete. Reopen while online to retry.');
   });
