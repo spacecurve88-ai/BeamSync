@@ -1,0 +1,22 @@
+name: BeamSync security regression tests
+on:
+  push:
+    branches:
+      - security/daybreak-fixes-20261119
+  pull_request:
+    paths:
+      - 'public/js/**'
+      - 'lib/**'
+      - '.github/workflows/security-regressions.yml'
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Transfer verification suite
+        run: node --test lib/verification/engine.test.cjs
