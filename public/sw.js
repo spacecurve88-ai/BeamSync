@@ -1,5 +1,5 @@
 // A release uses its own asset URLs and cache. Keep v13's separate cache available for rollback.
-const release = '14-r6';
+const release = '14-r7';
 const cacheName = 'beamsync-v' + release;
 const readyKey = '/__beamsync_package_ready__';
 const shells = new Map([['/','/index.html'],['/index.html','/index.html'],['/classic.html','/classic.html']]);
@@ -11,7 +11,7 @@ const assets = [
 ];
 const releaseAssets = new Set(assets.map(path => path + '?v=' + release));
 const previousAssets = new Map();
-for (const previousRelease of ['14-r5','14-r4']) {
+for (const previousRelease of ['14-r6','14-r5','14-r4']) {
   for (const asset of assets) previousAssets.set(asset + '?v=' + previousRelease, previousRelease);
 }
 const packagePaths = [...releaseAssets, '/index.html', '/classic.html'];

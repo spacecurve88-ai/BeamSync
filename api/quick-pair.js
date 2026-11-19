@@ -8,6 +8,11 @@ export const access = 'public';
 const trialHost = 'beamsync-draft.hatchable.site';
 
 export default async function (req, res) {
+  // Pause new invitations while unattended draft cleanup is being qualified.
+  if (req.body?.op === 'create') {
+    res.setHeader('Cache-Control', 'no-store, private');
+    return res.status(503).json({error:'One-scan pairing is temporarily unavailable. Use offline QR.'});
+  }
   const rooms = roomStore(db);
   const schedulePrune = async () => {
     // One-shot shared by this minute's invites. No permanent schedule and no file content.

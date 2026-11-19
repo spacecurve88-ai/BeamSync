@@ -1,4 +1,4 @@
-import {createUI} from './ui.js?v=14-r6';
+import {createUI} from './ui.js?v=14-r7';
 
 const C = window.BeamSyncCore;
 const P = window.BeamSyncPairing;
@@ -225,7 +225,7 @@ $('imagePick').onchange = e => {
   const file = e.target.files[0]; e.target.value = ''; if (file) P.scanImage(file).catch(report);
 };
 function updatePairing() {
-  ui.pairingAvailable(Q.enabled && navigator.onLine !== false, Q.enabled ? 'Offline QR works without internet access.' : 'One-scan pairing is disabled in this release.');
+  ui.pairingAvailable(Q.enabled && navigator.onLine !== false, Q.enabled ? 'Offline QR works without internet access.' : 'One-scan pairing is paused. Use offline QR to connect.');
 }
 function offlineReady() {
   ui.offline('Ready for offline use on this browser. On iPad, use Safari’s Share → Add to Home Screen for easy access.');
@@ -233,7 +233,7 @@ function offlineReady() {
 async function installOffline() {
   if (!('serviceWorker' in navigator)) { ui.offline('Offline installation is unavailable in this browser.'); return; }
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data?.cache !== 'beamsync-v14-r6') return;
+    if (e.data?.cache !== 'beamsync-v14-r7') return;
     if (e.data.type === 'OFFLINE_READY') offlineReady();
     if (e.data?.type === 'OFFLINE_CACHE_ERROR') ui.offline('Offline setup is incomplete. Reopen while online to retry.');
   });

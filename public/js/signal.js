@@ -2,7 +2,8 @@
 (() => {
   'use strict';
   // This trial is restricted to the exact HTTPS draft host, including direct client API calls.
-  const enabled = location.protocol === 'https:' && location.host === 'beamsync-draft.hatchable.site'
+  const releaseAllowsOneScan = false;
+  const enabled = releaseAllowsOneScan && location.protocol === 'https:' && location.host === 'beamsync-draft.hatchable.site'
     && document.querySelector('meta[name="beamsync-one-scan"]')?.content === 'enabled';
   const endpoint = '/api/quick-pair';
   function requireTrial() {
