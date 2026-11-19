@@ -92,7 +92,7 @@
   }
   class SignalError extends Error {
     constructor(code) {
-      const messages = {400:'Invalid pairing request.', 403:'Pairing access denied.', 404:'Invite unavailable or expired.',
+      const messages = {400:'Invalid pairing request.', 403:'Pairing access denied.', 404:'This QR has already been used or has expired. On the sending device, tap Send → Create pairing QR, then scan the new code.',
         409:'This invitation is in use. Create a fresh invite.', 429:'Pairing is busy. Try again shortly.'};
       super(messages[code] || 'The pairing service is unavailable. You can use offline QR.');
       this.code = code;

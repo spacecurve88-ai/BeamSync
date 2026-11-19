@@ -1,21 +1,31 @@
 # BeamSync upgrade record
 
-**November 18, 2026 · Existing project proj_GCQfu659zbEh · Cleanup-only review draft 17 · Production v13**
+**November 18, 2026 · Existing project proj_GCQfu659zbEh · Production 17 (v13 interface) · One-scan draft 18 (14-r8)**
 
-The owner approved preparing a cleanup-only release for review. Hatchable created **draft 17** on the existing BeamSync project. It contains the v13 interface and the scheduler-only function that deletes expired pairing invitations from the dedicated trial table. One-scan creation is unavailable. [Review draft](https://beamsync-draft.hatchable.site/) · [Live v13 app](https://beamsync.hatchable.site/)
+**Production** runs Hatchable version 17 with the same 15 public app files as v13. The owner promoted this release. Its added scheduler-only function can remove expired invitations from the separate pairing table. The public production app continues to use the existing two-scan offline exchange. [Live app](https://beamsync.hatchable.site/)
 
-### Release checks
+**One-scan trial** runs on Hatchable draft 18, BeamSync 14-r8. Its pairing service accepts requests on the draft host. Each phone or tablet needs access to the private draft. [Private draft](https://beamsync-draft.hatchable.site/)
+
+### After promotion
+
+- A first check saw the scheduler mark a job complete before the HTTP result appeared. The test itself then removed its fixtures, leaving automatic deletion unproven for that run.
+- A second check waited for both the scheduled invocation and the database outcome. The expired synthetic invitation was present before dispatch and absent afterward. The unexpired control survived, and the cleanup route recorded a successful HTTP invocation. Test teardown removed the remaining control and verified zero test fixtures. This established physical removal from the application table for that test. Platform logs and backups have their own retention.
+- The 25 public r8 files matched the draft 18 manifest by SHA-256. Its 15 local checks covered the exact draft-host restriction, offline QR directions and service-worker compatibility with r4–r7.
+- Two hosted Chromium 157 pages exercised the r8 interface. The receiver imported the QR image, tapped Join and established direct WebRTC. After the service closed the room, all 1,049,387 downloaded bytes matched the sender’s test file, with zero observed application HTTP fetch calls during the file phase. A later poll returned 404. The production mailbox route also returned 404.
+- A second hosted test created a real, encrypted r8 invitation and left it unclaimed. After the three-minute access window, the guest read and owner poll both returned 404 while the row still existed. The cleanup job then ran, its endpoint returned HTTP 200, and the row was absent in an independent database check. In this run the backend confirmed removal about five minutes and twenty seconds after the test began. No manual deletion was needed.
+
+**Physical one-scan result.** On November 18, the user confirmed that the iPad A16 and Galaxy A17 paired using the single camera scan on draft 18 (14-r8). The iPad displayed the invitation and the Galaxy scanned it. The user had previously confirmed multiple transfers in both directions using offline QR. Interruption recovery, offline relaunch and opening a saved file still need physical checks.
+
+### Before the owner promoted version 17
 
 - All 15 staged browser files matched the v13 release manifest by SHA-256. The deployment dry run reported 15 public files, one API function, one existing additive migration and zero warnings or errors. The migration defines the dedicated trial table. No new database design is part of this review.
 - Eight automated checks ran the exact cleanup handler against an isolated database. It removed expired rows and rows at the deadline, kept an unexpired invitation and the v13 sentinel, behaved consistently on a repeat run and propagated database failure. A separate read-only check against the project’s PostgreSQL clock confirmed the same three expiration boundaries. The route declares scheduler-only access and accepts POST.
 - A fresh browser checked both hosts. Fourteen HTTP responses matched byte for byte. Hatchable added different query strings to its own config and badge scripts in the HTML response. With those two query strings normalized, the full HTML also matched. Ordinary browser POSTs to the cleanup path and pairing mailbox returned 404. Two desktop Chromium app pages paired through the v13 manual exchange, sent text, declined and reoffered a file, then verified the 123,456 downloaded bytes against the source.
 - Deployment history listed version 17 as a draft and version 13 as live. The trial table contained zero invitations. The earlier upgrade, including the 14-r7 offline interface, is preserved in the rollback package.
 
-**Owner review.** In Hatchable, open **BeamSync → History → version 17**. Select **Promote to live** only if you approve this cleanup-only release. The hosted scheduler has yet to prove it can delete an abandoned invitation. After promotion, use a synthetic expired invitation and a future-dated control. Require a successful scheduled dispatch, actual removal of the expired row and survival of the unexpired control before reopening one-scan on a draft. The prior iPad and Galaxy offline transfer result stands. A physical one-scan test remains pending.
-
 ## One-scan draft trial · November 18, 2026
 
-One-scan worked in two hosted browser tests, but its scheduled cleanup failed. Draft deployment 16 (BeamSync 14-r7) hid one-scan in the interface and rejected new room creation with HTTP 503. Offline pairing remained available. The project database contained zero trial rooms at the final check. The iPad A16 and Galaxy A17 already passed two-way transfers with the offline QR exchange. Scanning the new one-scan QR with a physical camera is still pending.
+One-scan worked in two hosted browser tests, but its scheduled cleanup failed. Draft deployment 16 (BeamSync 14-r7) hid one-scan in the interface and rejected new room creation with HTTP 503. Offline pairing remained available. The project database contained zero trial rooms at the final check. The iPad A16 and Galaxy A17 already passed two-way transfers with the offline QR exchange. At this stage the physical one-scan check was pending. It later passed on draft 18.
 
 | Check | Latest result |
 | --- | --- |
@@ -29,7 +39,7 @@ One-scan worked in two hosted browser tests, but its scheduled cleanup failed. D
 | Hosted interruption recovery | On the r6 draft, Chromium interrupted a 2,097,783-byte transfer after 1,228,800 bytes arrived. Fresh pages re-paired through the QR photo controls and resumed at the verified 1,048,576-byte checkpoint. Only the remaining 1,049,207 bytes crossed the connection on the second attempt. The download matched byte for byte and the checkpoint was removed. A physical-device interruption remains to be tested. |
 | Draft deployment gate | Hatchable says the owner-console setting **Review changes before they go live** controls whether a deployment waits for promotion. The connector did not expose this setting. The owner then confirmed “Review is on.” [Hatchable deployment documentation](https://hatchable.com/docs/developers/mcp) |
 
-The owner subsequently approved preparation of a cleanup-only draft containing the exact v13 web app and only the cleanup handler on the server. Publishing it requires a separate owner action. That might let the scheduler reach the handler. Success requires observing a real automatic deletion of an abandoned room. Only then should the draft reopen one-scan and the iPad and Galaxy repeat pairing with one physical camera scan. Keep the v14 user-facing release on hold.
+The owner subsequently approved the cleanup-only draft and promoted it as live version 17. The post-promotion outcome appears at the start of this record.
 
 ## v13 audit and implementation sequence
 
@@ -68,7 +78,7 @@ The user confirmed that the Galaxy scanned the iPad’s offer and the iPad scann
 
 ## Pending decisions and device checks
 
-**One-scan privacy and approval.** The owner approved this trial for the draft only. The Hatchable service receives encrypted setup messages and can see the clients’ IP addresses, request timing and ciphertext size. Its QR contains a secret in the URL fragment. It grants its holder the chance to pair until expiry. File contents, filenames and chat messages bypass the service. The sender requests deletion after pairing. The trial server requested a one-time cleanup after room creation. The hosted scheduler returned 404 before the cleanup handler ran. Draft 14-r7 paused new rooms. The cleanup-only draft carries the v13 app, without a room creation route. This is an application access deadline, without a guarantee about physical deletion or platform log/backup retention. No recurring schedule, paid API or relay has been enabled.
+**One-scan privacy and approval.** The owner approved this trial for the draft only. The Hatchable service receives encrypted setup messages and can see the clients’ IP addresses, request timing and ciphertext size. Its QR contains a secret in the URL fragment. It grants its holder the chance to pair until expiry. File contents, filenames and chat messages bypass the service. The sender requests deletion after pairing. The trial server requested a one-time cleanup after room creation. The hosted scheduler returned 404 before the cleanup handler ran. Draft 14-r7 paused new rooms. The cleanup-only production release carries the v13 app without a room creation route. The three-minute deadline governs access. The application-table deletion test results are recorded above. Platform retention for logs or backups was outside these tests. No recurring schedule, paid API or relay has been enabled.
 
 **TURN.** STUN helps browsers find direct routes. Some mobile, corporate and guest networks block every usable direct route. A TURN relay would carry encrypted file traffic, see traffic metadata and consume bandwidth. No relay is configured. Failures on restricted networks should be recorded; approval and a bandwidth budget would precede any relay trial. [WebRTC TURN overview](https://webrtc.org/getting-started/turn-server)
 
@@ -80,10 +90,10 @@ The user confirmed that the Galaxy scanned the iPad’s offer and the iPad scann
 | Trust, permissions and suspension | Compare codes, save the other browser, reconnect through Recent Devices, and forget it. Deny camera or clipboard once and use the alternative. Test screen lock, app switching, storage pressure and recovery after returning. |
 | Size and real-network limits | Start with small files and increase. The configured ceilings are 250 MiB per file and 500 MiB per offer. Hardware memory, browser quota, export and actual network reliability determine usable limits. Verify a different-network attempt separately from same-Wi-Fi success. |
 
-**Release gate.** Keep v13 live pending physical Safari/Galaxy acceptance, especially offline start, native saves and interruption recovery. The hosted trial verified setup, pairing, expiry and owner cancellation. Scheduled removal failed. Hold one-scan until automatic removal passes and then repeat a real camera pairing on the two devices. A production release for the proposed cleanup-only experiment requires separate approval.
+**Release gate.** Keep the v13 web interface in production pending the iPad and Galaxy checks, particularly offline relaunch, native file saves and interruption recovery. The hosted trial verified setup, pairing, expiry and owner cancellation. Scheduled removal failed on the original v15 trial. The later live cleanup and resumed-draft observations appear above. The user confirmed physical one-scan camera pairing on draft 18. The owner subsequently promoted the cleanup-only experiment. Its result is recorded above.
 
 ## Rollback
 
-The reviewed releases were confined to the draft and the dedicated trial table exists in the project database. The live v13 deployment requires no rollback today. The archive's `baseline-v13/public/` tree and `deployment-manifest.json` identify the exact working release from October 16, 2026 UTC. For a future software rollback, restore those public files, check all 15 SHA-256 values, dry-run the project, then release the restored build. Retain the new files as unused staged sources unless their removal is approved. Check both a fresh browser and a warmed Home Screen install. Neither restoration nor the test plan requires clearing user browser storage or deleting any database.
+The user-facing upgrade releases were confined to the draft. The dedicated trial table exists in the project database. Live deployment 17 uses the same 15 public app files as v13 and adds the scheduler-only cleanup route. The archive's `baseline-v13/public/` tree and `deployment-manifest.json` identify the exact working release from October 16, 2026 UTC. For a future software rollback, restore those public files, check all 15 SHA-256 values, dry-run the project, then release the restored build. Retain the new files as unused staged sources unless their removal is approved. Check both a fresh browser and a warmed Home Screen install. Neither restoration nor the test plan requires clearing user browser storage or deleting any database.
 
 The trial’s additive migration defines a separate table from the v13 table. When reverting an active trial, disable room creation first and confirm the expiry cleanup removes any remaining rooms. A client-only rollback cannot undo a database migration.

@@ -1,4 +1,4 @@
-import {createUI} from './ui.js?v=14-r8';
+import {createUI} from './ui.js?v=14-r9';
 
 const C = window.BeamSyncCore;
 const P = window.BeamSyncPairing;
@@ -65,12 +65,17 @@ function endSession() {
   try {
     clearTimeout(verificationTimer); reconnectRequest = null; textReceipts.clear(); const old = identity; identity = null; expected = null;
     old?.close(); Q.reset(); P.resetPairing(); T.resetTransfers();
-    transferBusy = false; ui.incoming(null); ui.dismissInvite(); ui.closeOffline();
+    transferBusy = false; ui.incoming(null); ui.pendingInvite(''); ui.dismissInvite(); ui.closeOffline();
     ui.resetProgress(); renderConnection(); refreshPartials();
   } finally { resetInProgress = false; }
 }
 function requirePeer() {
   if (C.S.dc?.readyState !== 'open' || proofPending()) throw Error('Connect and verify the device first.');
+}
+function reconnectHint() {
+  return Q.enabled && navigator.onLine !== false
+    ? 'On the sending device, tap Send → Create pairing QR. Scan the new code on the receiving device and tap Join this device.'
+    : 'Create a new offline QR on the sender and exchange both scans again.';
 }
 function options() {
   return {network:navigator.onLine === false ? 'lan' : $('network-mode')?.value || 'lan',
@@ -97,7 +102,7 @@ async function act(name, data) {
       return;
     }
     case 'offlinePair': reconnectRequest = null; return offline(data.role);
-    case 'closeOffline': case 'disconnect': endSession(); ui.status('Disconnected.', 'info'); return;
+    case 'closeOffline': case 'disconnect': endSession(); ui.status('Disconnected. ' + reconnectHint(), 'info'); return;
     case 'sendFiles': requirePeer(); return T.sendFiles(data.files);
     case 'accept': requirePeer(); return T.acceptFiles({recover:!!data.recover, peer:identity?.state.status === 'trusted' ? identity.state.peerId : ''});
     case 'decline': return T.declineFiles();
@@ -162,7 +167,7 @@ C.hooks.onConnected = () => {
   }
   ui.status(pin ? 'Waiting for the saved device to verify its identity.' : 'Connected. You can now share files or text.', 'success');
 };
-C.hooks.onClosed = () => { endSession(); ui.status('Connection closed. To resume a saved transfer, reconnect and offer the same file.', 'warn'); };
+C.hooks.onClosed = () => { endSession(); ui.status('Connection closed. ' + reconnectHint() + ' Then offer the same file to resume.', 'warn'); };
 C.hooks.onFailed = () => {
   if (C.S.pairing === 'direct' && C.S.stage !== 'connected') { pairingFailed?.(); return; }
   endSession(); ui.status('Direct connection lost. Reconnect on the same Wi-Fi or hotspot. Saved transfers can resume when you offer the same file.', 'warn');
@@ -233,7 +238,7 @@ function offlineReady() {
 async function installOffline() {
   if (!('serviceWorker' in navigator)) { ui.offline('Offline installation is unavailable in this browser.'); return; }
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data?.cache !== 'beamsync-v14-r8') return;
+    if (e.data?.cache !== 'beamsync-v14-r9') return;
     if (e.data.type === 'OFFLINE_READY') offlineReady();
     if (e.data?.type === 'OFFLINE_CACHE_ERROR') ui.offline('Offline setup is incomplete. Reopen while online to retry.');
   });
@@ -248,8 +253,17 @@ addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInsta
 $('install-new')?.addEventListener('click', async () => { if (!deferredInstall) return; const event=deferredInstall; deferredInstall=null; $('install-new').hidden=true; await event.prompt(); });
 addEventListener('online',updatePairing); addEventListener('offline',updatePairing);
 addEventListener('pagehide', e => { endSession(); if (!e.persisted) T.clearReceived(); });
-addEventListener('pageshow', () => { refreshPartials(); refreshDevices(); });
+addEventListener('pageshow', () => { refreshPartials(); refreshDevices(); readPageInvite(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) P.stopCamera(); else if (C.S.dc?.readyState === 'open') C.pairStats(); });
 $('recovery-fold')?.addEventListener('toggle', () => { if ($('recovery-fold').open) refreshPartials(); });
 updatePairing(); renderConnection(); refreshDevices(); refreshPartials(); installOffline();
-if (Q.startupInvite && Q.enabled) ui.pendingInvite(Q.startupInvite);
+function receivePageInvite(url) {
+  if (!url || !Q.enabled) return;
+  if (C.S.stage === 'idle') ui.pendingInvite(url);
+  else ui.status(C.S.stage === 'connected'
+    ? 'This device is already connected. To join the new invitation, tap Disconnect and scan the new QR again.'
+    : 'Pairing is already in progress. To use the new invitation, tap Cancel pairing and scan the new QR again.', 'info');
+}
+function readPageInvite() { receivePageInvite(window.BeamSyncSignal.takeInvite()); }
+window.addEventListener('hashchange', readPageInvite);
+receivePageInvite(Q.startupInvite);

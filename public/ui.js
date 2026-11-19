@@ -271,9 +271,15 @@ export function createUI(handleAction) {
     hide('invite-box',true);
   }
   function pendingInvite(url) {
+    if (url && (!quick || connected || busy)) return;
     pendingUrl = String(url || '');
     hide('startup-invite',!pendingUrl);
-    if (pendingUrl) tab('receive');
+    if (pendingUrl) {
+      tab('receive');
+      const join = byId('accept-invite');
+      join.focus({preventScroll:true});
+      join.scrollIntoView({block:'center'});
+    }
   }
   function recognition({code='',label='',canIdentify=true,canTrust=false,trusted=false} = {}) {
     if (code !== safetyCode || !canTrust) byId('matching').checked = false;
@@ -351,7 +357,8 @@ export function createUI(handleAction) {
     write('pair-title',connected ? (state.peer || 'Device connected') : 'Connect a device');
     document.body.classList.toggle('connected',connected);
     hide('identity-panel',!connected);
-    if (connected) {dismissInvite(); pendingInvite('');}
+    if (connected || busy) pendingInvite('');
+    if (connected) dismissInvite();
     else {recognition(); byId('identity-panel').open = false; byId('device-name').value = '';}
     renderPairing(); renderFiles(); renderText();
   }
