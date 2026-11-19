@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="beamsync-app" content="v14-classic">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2f6fed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="BeamSync">
+<link rel="manifest" href="./manifest.webmanifest?v=14-r8">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=14-r8">
+<link rel="stylesheet" href="./app.css?v=14-r8">
+<title>BeamSync</title>
+<script src="./vendor/qrcode.min.js?v=14-r8"></script>
+<script src="./vendor/jsQR.js?v=14-r8"></script>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div>
+      <h1>BeamSync Classic</h1><a href="./">Open BeamSync</a>
+      <p>Direct file transfer between browsers.</p>
+    </div>
+    <div id="netBadge" class="badge">Checking…</div>
+  </header>
+
+  <main>
+    <section class="card hero">
+      <div class="mode-summary"><strong>Direct QR only.</strong> WebRTC setup is exchanged between the two screens. This mode uses offline QR and does not upload file bytes to a transfer server.</div>
+    </section>
+
+    <section id="directPanel" class="card">
+      <h2>Direct QR</h2>
+      <p class="help">The receiver scans the sender’s QR first. Then the sender scans the reply on the receiver’s screen. Same Wi-Fi / hotspot mode can work without public internet after BeamSync is cached locally.</p>
+      <label class="field"><span>Network mode</span>
+        <select id="directNetwork">
+          <option value="lan">Same Wi-Fi / hotspot — no STUN</option>
+          <option value="stun">Different networks — public STUN, no TURN</option>
+        </select>
+      </label>
+      <div class="choice-grid">
+        <div class="choice"><h3>Start</h3><p>Create the first handshake QR.</p><button id="directStart">Create connection QR</button></div>
+        <div class="choice"><h3>Join</h3><p>Scan the first device's handshake QR.</p><button id="directJoin" class="alt">Scan Device A</button></div>
+      </div>
+    </section>
+
+    <section id="pairCard" class="card hidden">
+      <div class="section-head"><div><h2 id="pairTitle" tabindex="-1" style="scroll-margin-block-start:5rem">Pairing</h2><p id="pairInstruction" class="help"></p></div><button id="reset" class="ghost small">Reset</button></div>
+      <div id="status" class="status">Ready.</div>
+      <div id="pairProgress" role="status" aria-live="polite" class="status subtle">No active handshake.</div>
+
+      <div id="qrArea" class="hidden qr-area">
+        <div id="qr"></div>
+        <div id="qrMeta" class="help center"></div>
+        <div class="actions center"><button id="qrPrev" class="ghost">Previous</button><button id="qrPause" class="alt">Pause rotation</button><button id="qrNext" class="ghost">Next</button></div>
+      </div>
+
+      <div id="scannerArea" class="hidden">
+        <div id="cameraBox" class="camera hidden"><video id="video" playsinline muted></video><div class="scan-line"></div></div>
+        <canvas id="canvas" class="hidden"></canvas>
+        <div class="actions"><button id="cameraOpen">Open live camera</button><label class="btn alt">Take photo / choose QR image<input id="imagePick" type="file" accept="image/*" capture="environment" hidden></label><button id="cameraStop" class="ghost">Stop camera</button></div>
+        <div id="scanProgress" class="status subtle hidden"></div>
+      </div>
+
+      <div id="rescueBox" class="rescue hidden">
+        <h3>Connection Rescue</h3>
+        <p id="rescueText" class="help"></p>
+        <div class="actions"><button id="rescueStart" class="hidden">Create rescue QR</button><button id="rescueJoin" class="alt hidden">Scan rescue QR</button></div>
+      </div>
+
+      <details class="details"><summary>Manual / technical fallback</summary>
+        <p class="help">Copy the exact BSQ handshake if camera scanning is unavailable.</p>
+        <textarea id="manualOut" readonly placeholder="This device's handshake"></textarea><div class="actions"><button id="copyManual" class="ghost">Copy</button></div>
+        <textarea maxlength="17500" id="manualIn" placeholder="Paste the other device's handshake"></textarea><div class="actions"><button id="applyManual" class="alt">Apply pasted handshake</button></div>
+      </details>
+    </section>
+
+    <section id="connectedCard" class="card hidden">
+      <div class="section-head"><div><h2>Connected directly <span class="check">✓</span></h2><p id="routeText" class="help">WebRTC DataChannel is open.</p></div><button id="disconnect" class="ghost small">Disconnect</button></div>
+
+      <div class="grid2">
+        <div>
+          <h3>Send</h3>
+          <input id="files" type="file" multiple>
+          <div class="actions"><button id="offerFiles">Offer selected files</button></div>
+          <div id="sendStatus" class="status subtle">Choose one or more files.</div>
+          <div class="bar"><span id="sendBar"></span></div>
+        </div>
+        <div>
+          <h3>Connection check</h3>
+          <input id="message" placeholder="Type a test message">
+          <div class="actions"><button id="sendMessage" class="alt">Send message</button></div>
+          <div id="chat" class="chat"></div>
+        </div>
+      </div>
+
+      <div id="incomingOffer" class="incoming hidden">
+        <h3>Incoming files</h3>
+        <div id="incomingList"></div>
+        <div id="spaceHint" class="help"></div>
+        <div class="actions"><button id="acceptFiles">Accept</button><button id="declineFiles" class="ghost">Decline</button></div>
+      </div>
+
+      <button class="ghost hidden" id="cancelTransfer">Cancel transfer</button><div class="received-block">
+        <h3>Received files</h3>
+        <div id="receiveStatus" class="status subtle">Nothing received yet.</div>
+        <div class="bar"><span id="receiveBar"></span></div>
+        <button class="ghost" id="clearDownloads">Clear received files</button><div id="received" class="received-list"></div>
+      </div>
+    </section>
+
+    <section class="card compact">
+      <div class="section-head"><div><h2>Offline readiness</h2><p class="help">Direct QR + Same Wi-Fi can work without public internet after this app is cached locally.</p></div><div id="offlineStatus" class="badge warn">Preparing…</div></div>
+      <div class="actions"><button id="installApp" class="ghost hidden">Install BeamSync</button></div><p id="installHelp" class="help"></p>
+    </section>
+
+    <details class="card details">
+      <summary>Diagnostics</summary>
+      <pre id="log">BeamSync classic diagnostics</pre>
+    </details>
+  </main>
+</div>
+<script src="./js/core.js?v=14-r8"></script>
+<script src="./js/pairing.js?v=14-r8"></script>
+<script src="./js/sha256.js?v=14-r8"></script>
+<script src="./js/recovery.js?v=14-r8"></script>
+<script src="./js/transfer.js?v=14-r8"></script>
+<script src="./js/main.js?v=14-r8"></script>
+</body>
+</html>
