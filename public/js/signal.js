@@ -1,11 +1,12 @@
 /* Ephemeral signaling for an ordered WebRTC data channel. All file bytes use WebRTC. */
 (() => {
   'use strict';
-  // This trial is restricted to the exact HTTPS draft host, including direct client API calls.
-  const enabled = location.protocol === 'https:' && location.host === 'beamsync-draft.hatchable.site'
+  // Keep invite keys on the originating HTTPS site.
+  const pairingHosts = ['beamsync.hatchable.site', 'beamsync-draft.hatchable.site'];
+  const enabled = location.protocol === 'https:' && pairingHosts.includes(location.host)
     && document.querySelector('meta[name="beamsync-one-scan"]')?.content === 'enabled';
   const endpoint = '/api/quick-pair';
-  function requireTrial() {
+  function requirePairingEnabled() {
     if (!enabled) throw Error('One-scan pairing is unavailable here. Use offline QR.');
   }
   const ttl = 180000;
@@ -126,7 +127,7 @@
     }
   }
   async function create(offer, {signal} = {}) {
-    requireTrial();
+    requirePairingEnabled();
     validate(offer, 'offer');
     for (let attempt = 0; attempt < 4; attempt++) {
       const secret = base64(fresh(32)), owner = hex(fresh(32));
@@ -162,7 +163,7 @@
     }
   }
   async function join(inviteURL, {signal} = {}) {
-    requireTrial();
+    requirePairingEnabled();
     const {room, secret} = parseInvite(inviteURL);
     const ctx = await keys(room, secret);
     const {box} = await request({op:'offer', room, token:ctx.guest}, signal);

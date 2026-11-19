@@ -1,12 +1,30 @@
 # BeamSync upgrade record
 
-**November 18, 2026 · Existing project proj_GCQfu659zbEh · Production 17 (v13 interface) · One-scan draft 18 (14-r8)**
+**November 18, 2026 · Existing project proj_GCQfu659zbEh · Production 17 (v13 interface) · Reconnect draft 19 (14-r9)**
 
 **Production** runs Hatchable version 17 with the same 15 public app files as v13. The owner promoted this release. Its added scheduler-only function can remove expired invitations from the separate pairing table. The public production app continues to use the existing two-scan offline exchange. [Live app](https://beamsync.hatchable.site/)
 
-**One-scan trial** runs on Hatchable draft 18, BeamSync 14-r8. Its pairing service accepts requests on the draft host. Each phone or tablet needs access to the private draft. [Private draft](https://beamsync-draft.hatchable.site/)
+**One-scan trial** runs on Hatchable draft 19, BeamSync 14-r9. Its pairing service accepts requests on the draft host. Each phone or tablet needs access to the private draft. [Private draft](https://beamsync-draft.hatchable.site/)
 
-### After promotion
+### Reconnecting after an interruption
+
+The iPad and Galaxy paired successfully the first time on draft 18. During the physical recovery check, the user reported that scanning a second time did not restore the connection. The exact code scanned and the receiver’s screen state at that point were not observed.
+
+On draft 18, a hosted Chromium test reproduced a case where the in-app camera decoded the new QR but the **Join this device** button was above the visible screen. A second test showed that opening a new QR link in an existing receiver tab could leave the invitation unprocessed. With a fresh QR and a visible Join button, the original build could reconnect the same two tabs and resume from a saved checkpoint.
+
+Draft 19 brings **Join this device** into view after scanning and handles a new invitation link opened in an idle receiver tab. Pairing still requires the receiver to tap Join. Disconnect and expired-invitation messages explain how to generate a fresh QR. A code from a completed connection has already been used.
+
+On the hosted r9 draft, two persistent desktop Chromium pages exercised the camera control twice with a generated video stream. The second Join button had moved from 260 pixels above the viewport in r8 to 305 pixels inside the 656-pixel viewport in r9. It received focus, and the second WebRTC connection carried text. These figures describe the test browser. The user’s device was not instrumented.
+
+Five hosted transfer-and-reconnect cases passed on draft 19. They covered a fresh QR image, a spent QR followed by a fresh one, the in-app camera with a generated stream, an invitation opened in the same tab and a scrolled mobile-size layout. Each case disconnected after an accepted 1 MiB checkpoint. Both original pages reconnected, the receiver resumed from 1,048,576 bytes, the final 2,097,783 bytes matched the source and the saved checkpoint was removed.
+
+All 25 public assets and five active server, shared-module and migration files matched draft 19’s release manifest. Sixteen automated checks covered the exact draft host and offline assets, including files still in use by r8 tabs. Five isolated reconnect tests, one old-channel callback test and nine existing identity and sharing checks also passed.
+
+**Physical reconnect and transfer recovery passed.** After interrupting a video transfer from the iPad A16 to the Galaxy A17, the user paired again with a fresh QR on draft 19. The user confirmed that the video resumed from its saved progress, finished, and opened on the Galaxy.
+
+**Offline sharing feedback.** After receiving the instructions for reopening BeamSync without internet and sharing a photo, the user replied “It’s good.” The exact network conditions, relaunch on each device, and photo result were not reported separately.
+
+### Earlier hosted one-scan tests on draft 18
 
 - A first check saw the scheduler mark a job complete before the HTTP result appeared. The test itself then removed its fixtures, leaving automatic deletion unproven for that run.
 - A second check waited for both the scheduled invocation and the database outcome. The expired synthetic invitation was present before dispatch and absent afterward. The unexpired control survived, and the cleanup route recorded a successful HTTP invocation. Test teardown removed the remaining control and verified zero test fixtures. This established physical removal from the application table for that test. Platform logs and backups have their own retention.
@@ -14,7 +32,7 @@
 - Two hosted Chromium 157 pages exercised the r8 interface. The receiver imported the QR image, tapped Join and established direct WebRTC. After the service closed the room, all 1,049,387 downloaded bytes matched the sender’s test file, with zero observed application HTTP fetch calls during the file phase. A later poll returned 404. The production mailbox route also returned 404.
 - A second hosted test created a real, encrypted r8 invitation and left it unclaimed. After the three-minute access window, the guest read and owner poll both returned 404 while the row still existed. The cleanup job then ran, its endpoint returned HTTP 200, and the row was absent in an independent database check. In this run the backend confirmed removal about five minutes and twenty seconds after the test began. No manual deletion was needed.
 
-**Physical one-scan result.** On November 18, the user confirmed that the iPad A16 and Galaxy A17 paired using the single camera scan on draft 18 (14-r8). The iPad displayed the invitation and the Galaxy scanned it. The user had previously confirmed multiple transfers in both directions using offline QR. Interruption recovery, offline relaunch and opening a saved file still need physical checks.
+**Physical one-scan result.** On November 18, the user confirmed that the iPad A16 and Galaxy A17 paired using the single camera scan on draft 18 (14-r8). The iPad displayed the invitation and the Galaxy scanned it. The user had previously confirmed multiple transfers in both directions using offline QR. The later draft 19 physical test confirmed recovery and opening the completed video on the Galaxy. Offline relaunch and opening files saved through the native file manager remain separate checks.
 
 ### Before the owner promoted version 17
 
@@ -36,7 +54,7 @@ One-scan worked in two hosted browser tests, but its scheduled cleanup failed. D
 | Hosted route | Before registration, browser POST requests returned 404 on both hosts and Hatchable’s direct function invocation returned 404. Reviewed deployment 14 then exposed the mailbox on the draft. A malformed draft POST reached its validator and returned 400. The production host still served v13 and returned 404 for the route. The r5 offline QR instructions were tested through both photo-import controls on the hosted draft, followed by a 1,310,725-byte transfer verified byte for byte. |
 | Draft one-scan release | Hatchable draft deployment 15 served BeamSync 14-r6 with one-scan enabled during the trial. In managed Chromium, the receiver’s image input decoded the sender’s QR and the receiver explicitly tapped Join. The real HTTP service created the room (201), returned the offer (200), accepted the answer, delivered it to the sender and closed the room. The peers kept their direct connection and transferred 1,049,387 bytes after room closure. Both runs produced byte-identical downloads. A later room poll returned 404. In the privacy repeat, setup requests omitted plaintext session descriptions and the invite key, used no-referrer, and received no-store responses. The file-transfer phase made zero observed HTTP fetch calls. Production continued to serve v13 and returned 404 for this route. |
 | Hosted expiration and deletion | The actual one-shot scheduler returned HTTP 404 before reaching the cleanup handler. Host authorization and room expiry still denied access, but an expired synthetic row persisted beyond the scheduled run. The tester removed that row and verified zero remaining test records. Draft deployment 16 then paused room creation. A browser confirmed the disabled client on the draft and the 503 response from the server. Production still served v13 and returned 404 for the mailbox. |
-| Hosted interruption recovery | On the r6 draft, Chromium interrupted a 2,097,783-byte transfer after 1,228,800 bytes arrived. Fresh pages re-paired through the QR photo controls and resumed at the verified 1,048,576-byte checkpoint. Only the remaining 1,049,207 bytes crossed the connection on the second attempt. The download matched byte for byte and the checkpoint was removed. A physical-device interruption remains to be tested. |
+| Hosted interruption recovery | On the r6 draft, Chromium interrupted a 2,097,783-byte transfer after 1,228,800 bytes arrived. Fresh pages re-paired through the QR photo controls and resumed at the verified 1,048,576-byte checkpoint. Only the remaining 1,049,207 bytes crossed the connection on the second attempt. The download matched byte for byte and the checkpoint was removed. The user subsequently confirmed successful interruption recovery on the iPad and Galaxy in draft 19. |
 | Draft deployment gate | Hatchable says the owner-console setting **Review changes before they go live** controls whether a deployment waits for promotion. The connector did not expose this setting. The owner then confirmed “Review is on.” [Hatchable deployment documentation](https://hatchable.com/docs/developers/mcp) |
 
 The owner subsequently approved the cleanup-only draft and promoted it as live version 17. The post-promotion outcome appears at the start of this record.
@@ -74,7 +92,7 @@ The owner subsequently approved the cleanup-only draft and promoted it as live v
 
 ## Physical-device result · November 18, 2026
 
-The user confirmed that the Galaxy scanned the iPad’s offer and the iPad scanned the Galaxy’s reply. After pairing, the user successfully sent multiple items back and forth between the iPad A16 and Galaxy A17. Repeated transfers passed in both directions on these physical devices. The return scan needed an explanation. Offline relaunch and interruption recovery remain separate physical checks.
+The user confirmed that the Galaxy scanned the iPad’s offer and the iPad scanned the Galaxy’s reply. After pairing, the user successfully sent multiple items back and forth between the iPad A16 and Galaxy A17. Repeated transfers passed in both directions on these physical devices. The return scan needed an explanation. The later physical interruption-recovery test passed on draft 19. Offline relaunch remains open.
 
 ## Pending decisions and device checks
 
@@ -85,12 +103,12 @@ The user confirmed that the Galaxy scanned the iPad’s offer and the iPad scann
 | Physical check | Pass condition |
 | --- | --- |
 | Native save and offer controls | Transfers in both directions passed on the user’s devices. Separate checks cover declining an offer, reading its receipt and opening saved items in Files or Downloads. |
-| Interruption on a shared Wi-Fi or hotspot | Accept a larger file with checkpoint retention. Disconnect after visible progress; do not press Cancel transfer. Reconnect, reoffer the same file and accept retention. Confirm transfer resumes from a nonzero offset and the completed file opens. Repeat once with retention off and expect a fresh start. |
+| Interrupted video transfer | Passed on draft 19 with checkpoint retention. The user confirmed that the original video resumed after reconnecting and opened on the Galaxy. A separate control with retention disabled would check that a new transfer starts from zero. |
 | Home Screen and offline launch | On each device, wait for offline readiness. Install or add to Home Screen and check readiness there. Remove the internet uplink while keeping both on the same local network. Relaunch, pair and transfer successfully. |
 | Trust, permissions and suspension | Compare codes, save the other browser, reconnect through Recent Devices, and forget it. Deny camera or clipboard once and use the alternative. Test screen lock, app switching, storage pressure and recovery after returning. |
 | Size and real-network limits | Start with small files and increase. The configured ceilings are 250 MiB per file and 500 MiB per offer. Hardware memory, browser quota, export and actual network reliability determine usable limits. Verify a different-network attempt separately from same-Wi-Fi success. |
 
-**Release gate.** Keep the v13 web interface in production pending the iPad and Galaxy checks, particularly offline relaunch, native file saves and interruption recovery. The hosted trial verified setup, pairing, expiry and owner cancellation. Scheduled removal failed on the original v15 trial. The later live cleanup and resumed-draft observations appear above. The user confirmed physical one-scan camera pairing on draft 18. The owner subsequently promoted the cleanup-only experiment. Its result is recorded above.
+**Release gate.** Keep the v13 web interface in production pending the iPad and Galaxy checks, particularly offline relaunch and native file saves. Physical interruption recovery passed on draft 19. The hosted trial verified setup, pairing, expiry and owner cancellation. Scheduled removal failed on the original v15 trial. The later live cleanup and resumed-draft observations appear above. The user confirmed physical one-scan camera pairing on draft 18. The owner subsequently promoted the cleanup-only experiment. Its result is recorded above.
 
 ## Rollback
 
