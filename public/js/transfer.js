@@ -152,7 +152,7 @@
     if (!dc || dc.readyState !== 'open') throw Error('Connect the devices first.');
     if (active) throw Error('Another file transfer is in progress.');
     const job = {id,direction,dc,controller:new AbortController(),phase:'proposal',next:0,doneBytes:0,
-      queue:Promise.resolve(),queued:0,queuedCount:0,writer:null,waiter:null,file:null,...data};
+      queue:Promise.resolve(),queued:0,queuedControl:0,queuedCount:0,writer:null,waiter:null,file:null,...data};
     job.onClose = () => stop(job,'Connection lost. Reconnect and offer the same file again.','error',true,false);
     dc.addEventListener('close',job.onClose);
     active = job;
@@ -514,11 +514,13 @@
     job.doneBytes += blob.size;
     control(job.dc,{t:'file-confirm',transferId:job.id,fileId:f.fileId,ok:true,sha256:f.digest});
   }
-  function enqueue(job,operation,bytes=0) {
+  function enqueue(job,operation,bytes=0,controlBytes=0) {
     if (job.phase !== 'accepted') return;
     job.queued += bytes;
+    job.queuedControl += controlBytes;
     job.queuedCount++;
-    if (job.queued > 16*BLOCK || job.queuedCount > 2048) {
+    // Total queue bytes cover both binary and control frames; controls also have a tighter budget.
+    if (job.queued > 16*BLOCK || job.queuedControl > 256*1024 || job.queuedCount > 2048) {
       stop(job,'Receiver could not keep up. Reconnect and retry.','error',true);
       return;
     }
@@ -535,7 +537,7 @@
       const keep = transportLost(job) || job.storageFailure;
       if (!keep && active === job && job.file) notify(job.dc,{t:'file-confirm',transferId:job.id,fileId:job.file.fileId,ok:false,sha256:''});
       stop(job,failureText(e,'receive'),'error',keep);
-    }).finally(()=>{job.queued-=bytes;job.queuedCount--;});
+    }).finally(()=>{job.queued-=bytes;job.queuedControl-=controlBytes;job.queuedCount--;});
   }
   function appendChat(who,text) {
     const chat = $('chat');
@@ -574,6 +576,12 @@
       if (job) stop(job,'Oversized control message.','error',false);
       return;
     }
+    // String length is not its wire size: count UTF-8 bytes before parsing or queueing.
+    const controlBytes = new TextEncoder().encode(data).byteLength;
+    if (controlBytes > MAX_CONTROL) {
+      if (job) stop(job,'Oversized control message.','error',false);
+      return;
+    }
     let m;
     try { m = JSON.parse(data); } catch { return; }
     if (!m || typeof m !== 'object' || Array.isArray(m)) return;
@@ -601,17 +609,18 @@
       }
       return;
     }
-    if (m.t === 'file-start') enqueue(job,()=>beginFile(job,m));
-    else if (m.t === 'file-proof') enqueue(job,()=>{
+    const queueControl = operation => enqueue(job,operation,controlBytes,controlBytes);
+    if (m.t === 'file-start') queueControl(()=>beginFile(job,m));
+    else if (m.t === 'file-proof') queueControl(()=>{
       const f = checkCurrent(job,m);
       if (!f.proof || m.proof !== f.proof) throw Error('The selected source does not match the saved checkpoint.');
       job.timing.reusedBytes += f.received;
       f.proof = null;
       control(job.dc,{t:'file-proof-ok',transferId:job.id,fileId:f.fileId});
     });
-    else if (m.t === 'file-block') enqueue(job,()=>verifyBlock(job,m));
-    else if (m.t === 'file-end') enqueue(job,()=>finishFile(job,m));
-    else if (m.t === 'transfer-complete') enqueue(job,()=>{
+    else if (m.t === 'file-block') queueControl(()=>verifyBlock(job,m));
+    else if (m.t === 'file-end') queueControl(()=>finishFile(job,m));
+    else if (m.t === 'transfer-complete') queueControl(()=>{
       if (m.id !== job.id || job.next !== job.meta.length || job.file) throw Error('Transfer ended before all accepted files were verified.');
       if (job.modern) control(job.dc,{t:'transfer-confirm',id:job.id});
       complete(job);
