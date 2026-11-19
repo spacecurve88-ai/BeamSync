@@ -10,8 +10,91 @@
   const MAX_ITEMS = 16;
   const TTL = 24 * 60 * 60 * 1000;
   const LEASE = 45000;
+  // v21 can only recognize a writer by this field. OPFS writers also hold
+  // an exclusive Web Lock, which can outlive every timer in a suspended tab.
+  const LEGACY_LOCK_GUARD = Number.MAX_SAFE_INTEGER;
   const HEX = /^[0-9a-f]{64}$/;
   let dbPromise, memoryReserved = 0;
+  const directoryName = 'beamsync-receive-r1';
+  const exportsInUse = new WeakMap();
+  const scriptURL = globalThis.document?.currentScript?.src;
+  const workerURL = scriptURL ? new URL('storage-worker.js' + new URL(scriptURL).search, scriptURL) : null;
+  function supportsFileStorage() {
+    return Boolean(workerURL && globalThis.Worker && globalThis.navigator?.storage?.getDirectory && navigator.locks?.request);
+  }
+
+  // A file stays locked while receiving and for as long as its download URL is usable.
+  async function lockFile(token) {
+    let release;
+    const held = new Promise(resolve => {release = resolve;});
+    return new Promise((resolve, reject) => {
+      navigator.locks.request('beamsync-file-' + token, {ifAvailable:true}, lock => {
+        resolve(lock ? release : null);
+        if (lock) return held;
+      }).catch(reject);
+    });
+  }
+  async function directory() {
+    const root = await navigator.storage.getDirectory();
+    return root.getDirectoryHandle(directoryName);
+  }
+  async function removeFile(token) {
+    try {await (await directory()).removeEntry(token);}
+    catch { /* An unreferenced file can be retried by the next sweep. */ }
+  }
+  async function collectOrphans(db) {
+    if (!supportsFileStorage()) return;
+    let dir;
+    try {dir = await directory();} catch {return;}
+    for await (const [token, entry] of dir.entries()) {
+      if (entry.kind !== 'file' || !/^[0-9a-f]{32}$/.test(token)) continue;
+      const release = await lockFile(token);
+      if (!release) continue;
+      try {
+        const referenced = await transaction(db, ['files'], 'readonly', (tx,set) => {
+          const req = tx.objectStore('files').getAll();
+          req.onsuccess = () => set(req.result.some(row => row.fileToken === token));
+        });
+        if (!referenced) await removeFile(token);
+      } finally {release();}
+    }
+  }
+
+  function fileWorker() {
+    const worker = new Worker(workerURL);
+    let pending = null, dead = false;
+    function terminate() {
+      dead = true;
+      worker.terminate();
+      pending?.reject(new DOMException('Temporary file worker stopped.', 'NotReadableError'));
+    }
+    worker.onerror = terminate;
+    worker.onmessageerror = terminate;
+    worker.onmessage = ({data}) => {
+      if (!pending) return;
+      if (data.failure) {
+        const {message, name} = data.failure;
+        pending.reject(name === 'Error' ? Error(message) : new DOMException(message,name));
+      } else pending.resolve(data.result);
+    };
+    async function call(op, fields = {}) {
+      if (dead || pending) throw new DOMException('Temporary file worker is unavailable.', 'NotReadableError');
+      let timer;
+      try {
+        return await new Promise((resolve,reject) => {
+          pending = {resolve,reject};
+          timer = setTimeout(terminate, 120000);
+          worker.postMessage({op,...fields});
+        });
+      } finally {clearTimeout(timer); pending = null;}
+    }
+    return {call,terminate};
+  }
+  function releaseFile(file) {
+    const release = exportsInUse.get(file);
+    exportsInUse.delete(file);
+    return release?.();
+  }
 
   function database() {
     if (!dbPromise) {
@@ -78,15 +161,24 @@
     tx.objectStore('blocks').delete(range);
   }
 
+  function renewLease(row, now) {
+    if (row.backend === 'opfs') {
+      row.writerLeaseUntil = now + LEASE;
+      row.leaseUntil = LEGACY_LOCK_GUARD;
+    } else {
+      row.leaseUntil = now + LEASE;
+    }
+  }
+
   function isActive(row, now) {
-    return Boolean(row.owner && row.leaseUntil > now);
+    return Boolean(row.owner && (row.writerLeaseUntil ?? row.leaseUntil) > now);
   }
 
   function expired(row, now) {
     return !isActive(row, now) && (!row.resumable || row.expiresAt <= now || !row.offset);
   }
 
-  function liveRows(tx, done) {
+  function liveRows(tx, done, lockedToken) {
     const files = tx.objectStore('files').getAll();
     const leases = tx.objectStore('leases').getAll();
     leases.onsuccess = () => {
@@ -96,7 +188,16 @@
         // A separate deletable lease lets an interrupted writer release its
         // claim even if quota pressure prevents every insert and update.
         if (owners.get(row.key) !== row.owner) row.owner = '';
-        if (expired(row, now)) remove(tx, row.key);
+        // The guard survives a process crash. Drop the separate lease as
+        // soon as the real timer expires and we own the same physical lock.
+        // Deletion can succeed even when there is no quota for another put.
+        if (row.backend === 'opfs' && row.fileToken === lockedToken &&
+            row.owner && !isActive(row, now)) {
+          tx.objectStore('leases').delete(row.key);
+          row.owner = '';
+        }
+        // A suspended OPFS writer may still hold its physical Web Lock after its IDB lease expires.
+        if (expired(row, now) && (row.backend !== 'opfs' || row.fileToken === lockedToken)) remove(tx, row.key);
         else live.push(row);
       }
       done(live);
@@ -104,29 +205,68 @@
   }
 
   async function sweep(db) {
-    return transaction(db, TABLES, 'readwrite', (tx,set) => liveRows(tx,set));
+    let rows = await transaction(db, TABLES, 'readwrite', (tx,set) => liveRows(tx,set));
+    const busy = new Set();
+    for (const row of rows) {
+      if (row.backend !== 'opfs' || !globalThis.navigator?.locks?.request) continue;
+      const now = Date.now();
+      if (!expired(row, now) && !(row.owner && !isActive(row, now))) continue;
+      const release = await lockFile(row.fileToken).catch(() => null);
+      if (!release) {busy.add(row.fileToken); continue;}
+      try {rows = await transaction(db, TABLES, 'readwrite', (tx,set) => liveRows(tx,set,row.fileToken));}
+      finally {release();}
+    }
+    for (const row of rows) if (busy.has(row.fileToken)) row.locked = true;
+    return rows;
   }
 
-  async function prune() {await sweep(await database());}
+  function getRow(db,key) {
+    return transaction(db, ['files'], 'readonly', (tx,set) => {
+      const req = tx.objectStore('files').get(key);
+      req.onsuccess = () => set(req.result);
+    });
+  }
+
+  async function prune() {
+    const db = await database();
+    await sweep(db);
+    await collectOrphans(db).catch(() => {});
+  }
 
   async function list() {
-    const rows = await sweep(await database());
+    const db = await database();
+    const rows = await sweep(db);
+    await collectOrphans(db).catch(() => {});
     return rows.filter(row => row.resumable && row.offset > 0)
-      .map(({key,name,size,offset,expiresAt,owner,leaseUntil}) => ({
-        key,name,size,offset,expiresAt,active:isActive({owner,leaseUntil}, Date.now())
+      .map(row => ({
+        key:row.key,name:row.name,size:row.size,offset:row.offset,
+        expiresAt:row.expiresAt,active:Boolean(row.locked) || isActive(row, Date.now())
       }));
   }
 
   async function forget(key) {
     if (typeof key !== 'string' || !key.startsWith('resume:')) throw Error('Invalid checkpoint.');
-    return transaction(await database(), TABLES, 'readwrite', (tx,set,fail) => {
-      liveRows(tx, rows => {
-        const row = rows.find(item => item.key === key);
-        if (!row) return;
-        if (isActive(row, Date.now())) return fail(Error('Stop the active transfer before removing its checkpoint.'));
-        remove(tx,key);
+    const db = await database();
+    const known = await getRow(db,key);
+    if (!known) return;
+    let release;
+    if (known.backend === 'opfs') {
+      if (!navigator.locks?.request || !(release = await lockFile(known.fileToken)))
+        throw Error('Stop the active transfer before removing its checkpoint.');
+    }
+    try {
+      await transaction(db, TABLES, 'readwrite', (tx,set,fail) => {
+        liveRows(tx, rows => {
+          const row = rows.find(item => item.key === key);
+          if (!row) return;
+          if (isActive(row, Date.now()) || row.fileToken !== known.fileToken)
+            return fail(Error('Stop the active transfer before removing its checkpoint.'));
+          remove(tx,key);
+        });
       });
-    });
+      if (release) await removeFile(known.fileToken);
+    } finally {release?.();}
+    await collectOrphans(db).catch(() => {});
   }
 
   function owned(db, key, owner, body) {
@@ -149,17 +289,25 @@
     return Infinity;
   }
 
-  function claim(db, fresh, free) {
+  function claim(db, fresh, free, alternateKey, lockedToken) {
     return transaction(db, TABLES, 'readwrite', (tx,set,fail) => {
       liveRows(tx, rows => {
         const now = Date.now();
-        const old = rows.find(row => row.key === fresh.key);
+        const old = rows.find(row => row.key === fresh.key) || rows.find(row => row.key === alternateKey);
         if (old && isActive(old,now)) return fail(Error('Another tab is receiving this file. After a closed tab, retry in 45 seconds.'));
         if (!old && (rows.length >= MAX_ITEMS || rows.reduce((sum,row) => sum+row.size, fresh.size) > MAX_TOTAL))
           return fail(Error('Checkpoint storage is full. Remove an interrupted transfer and retry.'));
         const offset = old?.offset || 0;
         if (fresh.size-offset > free) return fail(Error('The browser reports too little free space for this file.'));
-        const row = {...fresh, offset};
+        const useFile = old ? old.backend === 'opfs' : Boolean(lockedToken);
+        if (useFile && (!lockedToken || (old?.fileToken || fresh.owner) !== lockedToken))
+          return fail(Error('Another tab is using this temporary file. Retry in a moment.'));
+        const row = {...fresh, key:old?.key || (useFile ? alternateKey : fresh.key), offset};
+        if (useFile) {
+          row.backend = 'opfs';
+          row.fileToken = old?.fileToken || fresh.owner;
+        }
+        renewLease(row,now);
         tx.objectStore('files').put(row);
         tx.objectStore('leases').put({key:row.key,owner:row.owner});
         set(row);
@@ -178,23 +326,60 @@
     if (signal?.aborted) throw new DOMException('Transfer stopped.', 'AbortError');
   }
 
-  async function open(meta, {resumable = false, peer = '', onPrefix = () => {}, signal} = {}) {
+  async function open(meta, {resumable = false, peer = '', onPrefix = () => {}, signal, preferredBackend = 'auto'} = {}) {
     cancelIfNeeded(signal);
     if (!meta || typeof meta.sha256 !== 'string' || !HEX.test(meta.sha256) || !Number.isSafeInteger(meta.size) || meta.size < 0 || meta.size > MAX_FILE ||
         typeof peer !== 'string' || peer.length > 160 || typeof onPrefix !== 'function') throw Error('Invalid checkpoint metadata.');
     const owner = Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2,'0')).join('');
-    const key = resumable ? 'resume:' + meta.sha256 + ':' + meta.size + ':' + peer : 'temp:' + owner;
+    const legacyKey = resumable ? 'resume:' + meta.sha256 + ':' + meta.size + ':' + peer : 'temp:' + owner;
     const name = String(meta.name || 'received.bin').slice(0,240);
     const type = 'application/octet-stream';
     const size = meta.size;
     let db;
     try {db = await database();} catch {}
     cancelIfNeeded(signal);
-    let offset = 0;
+    const alternateKey = resumable ? 'resume:opfs:' + meta.sha256 + ':' + size + ':' + peer : 'temp:opfs:' + owner;
+    let key = legacyKey, offset = 0, worker, token, unlock;
     if (db) {
-      const now = Date.now();
+      await sweep(db);
+      await collectOrphans(db).catch(() => {});
       const free = await freeEstimate();
-      const record = await claim(db, {key,name,size,resumable,owner,leaseUntil:now+LEASE,expiresAt:now+TTL}, free);
+      const now = Date.now();
+      const fresh = {key,name,size,resumable,owner,leaseUntil:now+LEASE,expiresAt:now+TTL};
+      // Acquire the physical lock before changing ownership. Old tabs may be suspended.
+      const existingFile = await getRow(db,alternateKey);
+      const preferFile = preferredBackend !== 'indexeddb' && size >= BLOCK;
+      if (existingFile?.backend === 'opfs' || (preferFile && supportsFileStorage())) {
+        if (existingFile && !supportsFileStorage()) throw Error('This saved file needs temporary file access. Retry on this browser.');
+        token = existingFile?.fileToken || owner;
+        try {unlock = await lockFile(token);}
+        catch (error) {if (existingFile) throw error;}
+        if (existingFile && !unlock) throw Error('Another tab is using this temporary file.');
+      }
+      let record;
+      try {record = await claim(db, fresh, free, alternateKey, unlock ? token : null);}
+      catch (error) {unlock?.(); throw error;}
+      if (record.backend === 'opfs') {
+        key = record.key;
+        try {
+          worker = fileWorker();
+          await worker.call('open', {token,offset:record.offset});
+        } catch (error) {
+          worker?.terminate();
+          worker = null;
+          const discard = !record.offset || error.name === 'Error';
+          try {
+            await owned(db,key,owner,(tx) => {
+              if (discard) remove(tx,key);
+              else tx.objectStore('leases').delete(key);
+            });
+            if (discard) await removeFile(token);
+          } finally {unlock(); unlock = null;}
+          if (record.offset || signal?.aborted) throw error;
+          record = await claim(db, fresh, free, alternateKey, null);
+        }
+      } else {unlock?.(); unlock = null;}
+      key = record.key;
       offset = record.offset;
     } else {
       if (size + memoryReserved > RAM_LIMIT) throw Error('Browser storage is unavailable. Memory-only transfers are limited to 32 MiB in total.');
@@ -219,6 +404,10 @@
 
     async function verified(at) {
       const block = await readBlock(at);
+      if (worker && block && HEX.test(block.sha256)) {
+        const bytes = await worker.call('read',{offset:at,length:offsetSize(at),expected:block.sha256});
+        return {bytes};
+      }
       if (!block || !(block.blob instanceof Blob) || block.blob.size !== offsetSize(at) || !HEX.test(block.sha256))
         throw Error('The saved checkpoint is incomplete. Send this file again.');
       const {bytes,hex} = await digest(block.blob);
@@ -239,16 +428,29 @@
       const operation = signal.reason === 'beamsync-discard' ? discard : interrupt;
       operation().catch(() => {});
     };
-    async function close(retain) {
+    async function close(retain, exportedFile) {
       if (closed) return;
+      let removed = false;
       try {
+        if (worker) {
+          await worker.call('close').catch(() => {});
+          worker.terminate();
+        }
         if (db) {
           await owned(db,key,owner,(tx,row) => {
             if (retain && resumable && row.offset) tx.objectStore('leases').delete(key);
-            else remove(tx,key);
+            else {remove(tx,key); removed = true;}
           });
+          if (worker && exportedFile) {
+            const release = unlock;
+            exportsInUse.set(exportedFile, async () => {
+              try {await removeFile(token);} finally {release();}
+            });
+            unlock = null;
+          } else if (worker && removed) await removeFile(token);
         }
       } finally {
+        unlock?.();
         clearInterval(leaseTimer);
         signal?.removeEventListener('abort',onAbort);
         memory.length = 0;
@@ -268,7 +470,7 @@
       leaseTimer = setInterval(() => {
         if (closed) return;
         owned(db,key,owner,(tx,row,files) => {
-          row.leaseUntil = Date.now()+LEASE;
+          renewLease(row,Date.now());
           files.put(row);
         }).catch(() => {});
       }, LEASE/3);
@@ -296,17 +498,18 @@
         check();
         const blob = data instanceof Blob ? data : new Blob([data]);
         if (!blob.size || blob.size !== offsetSize(offset)) throw Error('Invalid checkpoint block length.');
-        const {hex} = await digest(blob);
+        const hex = worker ? await worker.call('append',{offset,blob,expected}) : (await digest(blob)).hex;
         check();
         if (expected !== undefined && expected !== hex) throw Error('The received checkpoint failed verification.');
         const end = offset + blob.size;
-        const block = {key,at:offset,sha256:hex,blob};
+        const block = {key,at:offset,sha256:hex};
+        if (!worker) block.blob = blob;
         if (db) {
           await owned(db,key,owner,(tx,row,files) => {
             if (row.offset !== offset) throw Error('Checkpoint offset changed.');
             tx.objectStore('blocks').add(block);
             row.offset = end;
-            row.leaseUntil = Date.now()+LEASE;
+            renewLease(row,Date.now());
             row.expiresAt = Date.now()+TTL;
             files.put(row);
           });
@@ -316,12 +519,20 @@
       });
     }
 
-    function finish() {
+    function finish(verifiedStreamDigest) {
       return queue(async () => {
         check();
         if (offset !== size) throw Error('The file is incomplete.');
         const parts = [];
         try {
+          if (worker) {
+            const file = await worker.call('finish',{size,expected:meta.sha256,streamVerified:verifiedStreamDigest === meta.sha256});
+            check();
+            if (!(file instanceof Blob) || file.size !== size) throw Error('The saved file size changed.');
+            const output = file.slice(0,file.size,type);
+            await close(false,output);
+            return output;
+          }
           for (let at = 0; at < size; at += BLOCK) {
             check();
             parts.push((await verified(at)).blob);
@@ -338,8 +549,8 @@
       });
     }
 
-    return {get offset() {return offset;}, resumable:Boolean(resumable && db), key, append, finish, interrupt, discard};
+    return {backend:worker ? 'opfs' : db ? 'indexeddb' : 'memory', get offset() {return offset;}, resumable:Boolean(resumable && db), key, append, finish, interrupt, discard};
   }
 
-  window.BeamSyncRecovery = {open,list,forget,prune,BLOCK,TTL};
+  window.BeamSyncRecovery = {open,list,forget,prune,releaseFile,BLOCK,TTL};
 })();
