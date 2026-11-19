@@ -1,5 +1,5 @@
 // A release uses its own asset URLs and cache. Keep v13's separate cache available for rollback.
-const release = '14-r5';
+const release = '14-r6';
 const cacheName = 'beamsync-v' + release;
 const readyKey = '/__beamsync_package_ready__';
 const shells = new Map([['/','/index.html'],['/index.html','/index.html'],['/classic.html','/classic.html']]);
@@ -10,9 +10,10 @@ const assets = [
   '/vendor/jsQR.js','/vendor/qrcode.min.js','/icons/apple-touch-icon.png','/icons/icon-192.png','/icons/icon-512.png'
 ];
 const releaseAssets = new Set(assets.map(path => path + '?v=' + release));
-const previousRelease = '14-r4';
-const previousCacheName = 'beamsync-v' + previousRelease;
-const previousAssets = new Set(assets.map(path => path + '?v=' + previousRelease));
+const previousAssets = new Map();
+for (const previousRelease of ['14-r5','14-r4']) {
+  for (const asset of assets) previousAssets.set(asset + '?v=' + previousRelease, previousRelease);
+}
 const packagePaths = [...releaseAssets, '/index.html', '/classic.html'];
 const jsTypes = new Set(['text/javascript','application/javascript','application/ecmascript','text/ecmascript','application/x-javascript']);
 
@@ -104,8 +105,10 @@ self.addEventListener('fetch', event => {
     return;
   }
   const key = url.pathname + url.search;
-  // An open r4 tab can request its own assets after r5 claims it. Read only its completed package.
-  if (previousAssets.has(key)) {
+  // Tabs opened before activation can finish loading their own installed packages.
+  const previousRelease = previousAssets.get(key);
+  if (previousRelease) {
+    const previousCacheName = 'beamsync-v' + previousRelease;
     event.respondWith((async () => {
       try {
         if ((await caches.keys()).includes(previousCacheName)) {
