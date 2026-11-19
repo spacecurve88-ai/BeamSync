@@ -5,8 +5,8 @@
   <meta name="theme-color" content="#f5f7f6"><meta name="beamsync-app" content="v14">
   <meta name="beamsync-one-scan" content="enabled"><meta name="referrer" content="no-referrer">
   <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="BeamSync">
-  <link rel="manifest" href="./manifest.webmanifest?v=14-r10"><link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=14-r10">
-  <link rel="stylesheet" href="./ui.css?v=14-r10"><title>BeamSync</title>
+  <link rel="manifest" href="./manifest.webmanifest?v=14-r14"><link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=14-r14">
+  <link rel="stylesheet" href="./ui.css?v=14-r14"><title>BeamSync</title>
 </head>
 <body>
 <a class="skip" href="#workspace">Skip to sharing</a>
@@ -95,7 +95,7 @@
     </div></details>
   </aside></div>
   <details class="diagnostics fold"><summary>Diagnostics &amp; offline access</summary><div class="fold-body">
-    <p id="offline-status" class="hint">Checking offline readiness…</p><button id="install-new" class="btn quiet" hidden>Install BeamSync</button><pre id="diagnostic-log">No connection details yet.</pre>
+    <p id="offline-status" class="hint">Checking offline readiness…</p><button id="install-new" class="btn quiet" hidden>Install BeamSync</button><pre id="transfer-timings" aria-label="Latest transfer timings on this device" hidden></pre><pre id="diagnostic-log">No connection details yet.</pre>
   </div></details>
 </main>
 </div>
@@ -134,16 +134,17 @@
 <video id="scan-video" playsinline muted hidden></video><canvas id="scan-canvas" hidden></canvas>
 <div class="buttons"><button id="camera-start" class="btn primary">Use camera</button><button id="camera-stop" class="btn quiet" hidden>Stop camera</button><button id="image-open" class="btn quiet">Choose QR image</button><input type="file" id="scan-image" accept="image/*" hidden></div>
 <button id="paste-link-instead" class="text-link">Paste a link instead</button></dialog>
-<script src="./vendor/jsQR.js?v=14-r10"></script>
-<script src="./vendor/qrcode.min.js?v=14-r10"></script>
-<script src="./js/core.js?v=14-r10"></script>
-<script src="./js/pairing.js?v=14-r10"></script>
-<script src="./js/sha256.js?v=14-r10"></script>
-<script src="./js/recovery.js?v=14-r10"></script>
-<script src="./js/transfer.js?v=14-r10"></script>
-<script src="./js/devices.js?v=14-r10"></script>
-<script src="./js/share.js?v=14-r10"></script>
-<script src="./js/signal.js?v=14-r10"></script>
-<script src="./js/quick-pair.js?v=14-r10"></script>
-<script type="module" src="./app.js?v=14-r10"></script>
+<script src="./vendor/jsQR.js?v=14-r14"></script>
+<script src="./vendor/qrcode.min.js?v=14-r14"></script>
+<script src="./js/core.js?v=14-r14"></script>
+<script src="./js/image-preflight.js?v=14-r14"></script>
+<script src="./js/pairing.js?v=14-r14"></script>
+<script src="./js/sha256.js?v=14-r14"></script>
+<script src="./js/recovery.js?v=14-r14"></script>
+<script src="./js/transfer.js?v=14-r14"></script>
+<script src="./js/devices.js?v=14-r14"></script>
+<script src="./js/share.js?v=14-r14"></script>
+<script src="./js/signal.js?v=14-r14"></script>
+<script src="./js/quick-pair.js?v=14-r14"></script>
+<script type="module" src="./app.js?v=14-r14"></script>
 </body></html>
