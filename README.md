@@ -1,4 +1,52 @@
+[![Deploy to Hatchable](https://hatchable.com/deploy-button.svg)](https://hatchable.com/deploy?repo=https://github.com/spacecurve88-ai/BeamSync)
+
 # BeamSync upgrade record
+
+## Live release · November 19, 2026
+
+**The regular BeamSync address now runs Hatchable version 21, app 14-r10.** Hatchable marks version 17 as superseded. A hosted browser opened the regular site and confirmed that one-scan pairing was enabled. The existing rollback snapshots remain available. [Open BeamSync](https://beamsync.hatchable.site/)
+
+**Transfers on the live site.** Two pages in hosted desktop Chromium connected over WebRTC. After a deliberate disconnect, the receiver retained 1,048,576 verified bytes of a 2,097,783-byte file. A fresh pairing QR reopened the connection on the same tabs. The transfer resumed at that checkpoint, matched the source byte for byte and removed the saved checkpoint. A second attempt with the spent QR returned HTTP 404 and displayed instructions to create a fresh one.
+
+All six live Chromium transfer scenarios passed. The other one-scan cases checked reopening the invitation in the same tab, scanning with a simulated camera, and joining from a narrow, scrolled phone-sized window. Each restored the same file from the verified 1 MiB checkpoint.
+
+**Text and links.** A separate test paired two pages using both offline QR images. The first sent a text message and received a clickable HTTPS link in return. Both messages appeared within BeamSync. The test used no clipboard permission.
+
+**Offline QR and cached app.** Two pages used the QR photo-import controls for both the offer and the reply. They transferred all 1,310,725 bytes correctly, with zero requests to the one-scan service. The actual service worker controlled the live tab and the app displayed “Ready for offline use.” The cache contained 23 fixed entries and excluded API, sign-in and invitation URLs. Both the main and Classic interfaces loaded from the warmed cache when a test simulated a failed network fetch. A cold launch on the physical devices with the internet disconnected remains unverified for this release.
+
+**Abandoned invitation and automatic deletion.** A synthetic live invitation created at 9:35:39 a.m. Toronto time returned its encrypted offer on the regular site. The draft returned HTTP 404 with the same guest credential. Three seconds after its three-minute access deadline the regular site also returned HTTP 404, while a direct database check still found the encrypted record. The scheduled cleanup handler then returned HTTP 200 at 9:40:21 a.m. By 9:40:25 a.m. the expired record was gone and a newer, unexpired invitation still returned its offer. Closing the newer invitation removed it too. A final database check found neither test record on either site. This run measured about 4 minutes 46 seconds from creation to confirmed removal. The expiration deadline and the later database cleanup are separate events.
+
+**On the iPad and Galaxy.** Earlier device testing covered the v19 review build. To check the promoted version, open the regular website on both devices, create a fresh QR on the iPad, scan and join on the Galaxy, then send and open a small photo. For each new one-scan session, create a fresh code. Previous trust decisions and saved partial files stay with the web address where they were created.
+
+## Prior release record
+
+**November 18, 2026, evening in Toronto · Existing Hatchable project proj_GCQfu659zbEh**
+
+**Regular website.** Version 17 is live. It serves the v13 interface and supports the two-scan offline exchange. A hosted browser saw its existing manifest, found one-scan disabled and received HTTP 404 from the invitation endpoint. [Open BeamSync](https://beamsync.hatchable.site/)
+
+**Ready for owner review.** Hatchable draft 21, BeamSync 14-r10, is the candidate for the regular website. The 14-r10 interface offers one-scan on the exact HTTPS addresses for this project's review and regular websites. Each site accepts its own invitation links and has its own 64-slot mailbox. Existing draft invitations and browser data keep their original locations. The new database migration adds an empty independent table to hold regular-site invitations. File bytes and shared text still travel over WebRTC. Invitation requests expose the clients' IP addresses, time and encrypted message lengths to the host. The invitation key stays in the QR link fragment. The QR holder can request pairing within three minutes. The release adds neither a paid service nor a recurring job. [Open the private review site](https://beamsync-draft.hatchable.site/)
+
+**Invitation retry fix.** On draft 20 a delayed scheduler failure from an earlier create request could delete an invitation that its successful retry had already displayed. The regression test reproduced that loss, including the saved answer. Draft 21 schedules expiry before making a new room visible, retains the original deadline across overlapping requests, and checks it again before writing. The app and scheduled cleanup route are byte-identical to v20. A narrower edge remains. If the sender closes an invite while an authenticated duplicate create is in flight, the late request may briefly restore the encrypted offer, bounded by its deadline. The interrupted request cannot reopen the sender's closed WebRTC connection.
+
+**Automated release checks.**
+
+| Where the check ran | What passed |
+| --- | --- |
+| Release build | Hatchable dry runs for v20 and v21 reported zero errors and warnings. All 31 active files matched the local v21 candidate. The archive includes all 39 files in each immutable manifest. The v21 delta affects only the public invitation handler, shared request handler, and storage module. |
+| Local browser-logic and cache tests | Eighteen origin, invitation and service-worker checks and five reconnect checks passed for the 14-r10 web files. The older tab cache fixtures cover r4 through r9. |
+| Local server and encryption tests | Fifteen v21 cases exercised host isolation, consent credentials, capacity, retries, clock boundaries and cleanup. Twelve cases ran the actual signaling client through Node WebCrypto, six per origin. HTTP and the scheduler were simulated. |
+| Managed project PostgreSQL | The first v20 rehearsal passed 35 checks. The v21 source passed 41, including overlapping creates, fixed expiration and cleanup of both mailboxes. The runner supplied host names, synthetic envelopes and a recording scheduler. Both runs left zero test-owned rows. The sweep test locked the real tables and checked that only its own rows were present. |
+| Hosted review browser | On both v20 and v21, five Chromium reconnect cases used a fresh code, a spent code followed by a fresh one, a camera stream, a new link opened in place, and a scrolled mobile-size layout. Each restored a 2,097,783-byte file from a 1,048,576-byte checkpoint, compared the final bytes and removed the checkpoint. Separately, two-scan offline QR image import delivered 1,310,725 verified bytes. Neither frame recorded an invitation HTTP request in that case. The v21 review page also rejected a regular-site invitation before making any signaling request. |
+
+**Offline cache.** Hosted Chromium activated the actual 14-r10 service worker on both v20 and v21. It cached both the main and Classic shells with their dependencies, excluded invitation and API URLs, and served the correct shell after a simulated fetch failure. A separate operating-system network-toggle test was blocked by the local Chromium launch environment. Cold launch with the devices’ internet uplink disconnected remains a physical test.
+
+**Evidence on the iPad and Galaxy.** The owner previously confirmed the v19 review build reconnected with a fresh QR and resumed an interrupted video from the saved progress. The video finished and opened on the Galaxy. Earlier two-scan sharing worked in both directions. The owner’s “It’s good” after the offline instructions did not identify the network conditions, Home Screen relaunch or photo result separately. The 14-r10 builds have yet to be exercised on these physical devices at the regular URL.
+
+**After an owner promotion.** Verify the regular site's release marker, one-scan pairing on both devices and a received file that opens. Confirm interruption recovery and offline launch at that origin. A separate synthetic invitation left unclaimed should become inaccessible at three minutes and later be removed from the regular-site table by a real scheduled job, with an unexpired control surviving. Full native iPadOS Safari and Android Chrome behavior, camera and clipboard permissions, backgrounding and maximum usable file size remain device-dependent. The prior review site's trust and checkpoints live on that origin. Trust the regular-site peer only after comparing its verification code.
+
+**Rollback.** Version 17 is the working public rollback point. Once the regular-site mailbox has served invitations, keep the cleaner for both tables active while stopping new invitations and waiting for expired rooms to be removed. The v17 cleanup function only knows the draft table. Restore the v17 app and route set after removal is verified. The archive preserves the v13 baseline, v17 public deployment, v19 reconnect release and the regular-site review snapshots.
+
+## Earlier releases and device results
 
 **November 18, 2026 · Existing project proj_GCQfu659zbEh · Production 17 (v13 interface) · Reconnect draft 19 (14-r9)**
 
