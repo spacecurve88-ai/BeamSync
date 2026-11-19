@@ -1,140 +1,27 @@
-(() => {
-  'use strict';
-  const $ = id => document.getElementById(id);
-  const enc = new TextEncoder(), dec = new TextDecoder();
-  const LAN = {iceServers: []};
-  // These are the STUN services already offered by v13; LAN mode contacts none.
-  const STUN = {iceServers: [{urls: 'stun:stun.cloudflare.com:3478'},
-    {urls: 'stun:stun.l.google.com:19302'}, {urls: 'stun:stun.nextcloud.com:443'}]};
-  const S = {pairing: 'direct', role: null, stage: 'idle', attempt: 0,
-    pc: null, dc: null, directRescueRound: 0, timers: []};
-  const hooks = {onConnected: null, onFailed: null, onMessage: null, onClosed: null};
-  const history = [];
-  function notify(name, detail) { window.dispatchEvent(new CustomEvent(name, {detail})); }
-  function log(message) {
-    history.push('[' + new Date().toLocaleTimeString() + '] ' + message);
-    if (history.length > 80) history.shift();
-    const el = $('log');
-    if (el) { el.textContent = history.join('\n'); el.scrollTop = el.scrollHeight; }
-    notify('beamsync-diagnostics', history.join('\n'));
-  }
-  function show(id, visible = true) { $(id)?.classList.toggle('hidden', !visible); }
-  function writeStatus(id, message, kind) {
-    const el = $(id);
-    if (el) { el.className = 'status ' + kind; el.textContent = message; }
-  }
-  function status(message, kind = '') {
-    writeStatus('status', message, kind); log(message); notify('beamsync-status', {message,kind});
-  }
-  function progress(message, kind = 'subtle') { writeStatus('pairProgress', message, kind); }
-  function addTimer(fn, ms) {
-    const t = setTimeout(() => { S.timers = S.timers.filter(x => x !== t); fn(); }, ms);
-    S.timers.push(t); return t;
-  }
-  function clearTimers() { S.timers.forEach(clearTimeout); S.timers = []; }
-  function fmtBytes(n) {
-    if (n < 1024) return n + ' B';
-    for (const [size, unit] of [[1073741824,'GiB'],[1048576,'MiB'],[1024,'KiB']])
-      if (n >= size) return (n/size).toFixed(size === 1073741824 ? 2 : 1) + ' ' + unit;
-  }
-  function hex(buf) { return Array.from(new Uint8Array(buf), x => x.toString(16).padStart(2,'0')).join(''); }
-  function randId(n = 10) { return hex(crypto.getRandomValues(new Uint8Array(n))); }
-  function b64u(bytes) {
-    let s = '';
-    for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode(...bytes.subarray(i,i+32768));
-    return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  }
-  function unb64u(s) {
-    const raw = atob(s.replace(/-/g,'+').replace(/_/g,'/'));
-    return Uint8Array.from(raw, ch => ch.charCodeAt(0));
-  }
-  function beginAttempt() { clearTimers(); S.directRescueRound = 0; return ++S.attempt; }
-  function hardClose() {
-    clearTimers(); const {pc,dc} = S; S.dc = null; S.pc = null;
-    if (dc) { dc.onopen = dc.onclose = dc.onmessage = dc.onerror = null; try {dc.close();} catch {} }
-    if (pc) { try {pc.close();} catch {} }
-  }
-  function wireChannel(channel) {
-    if (S.dc && S.dc !== channel || !channel.ordered || channel.maxRetransmits != null || channel.maxPacketLifeTime != null) {
-      channel.close(); return;
-    }
-    S.dc = channel; channel.binaryType = 'arraybuffer';
-    channel.onopen = () => { if (S.dc === channel) hooks.onConnected?.(); };
-    channel.onclose = () => { if (S.dc === channel) { log('Data channel closed'); hooks.onClosed?.(); } };
-    channel.onerror = () => { if (S.dc === channel) log('Data channel reported a transport error'); };
-    channel.onmessage = e => { if (S.dc === channel) hooks.onMessage?.(e); };
-  }
-  function makePC(mode) {
-    hardClose();
-    if (!window.RTCPeerConnection) throw Error('This browser does not provide WebRTC. Open BeamSync in Safari or Chrome.');
-    const assisted = mode === 'stun';
-    const pc = new RTCPeerConnection(assisted ? STUN : LAN); S.pc = pc;
-    const candidateTypes = new Set();
-    log(assisted ? 'Checking local and public-STUN routes.' : 'Checking local routes on Wi-Fi or hotspot.');
-    function routeHint() {
-      if (!candidateTypes.size) return 'The browser reported no route. Check Wi-Fi access and try pairing again.';
-      if (!assisted) return 'Use the same Wi-Fi or hotspot. For separate networks, choose Different networks on both devices.';
-      if (!candidateTypes.has('srflx') && !candidateTypes.has('prflx'))
-        return 'No public route was reported. Check internet access or switch both devices to the same hotspot.';
-      return 'A direct route could not open. Isolated Wi-Fi and restrictive mobile networks may require a relay. Try the same hotspot.';
-    }
-    pc.ondatachannel = e => { if (S.pc === pc) wireChannel(e.channel); else e.channel.close(); };
-    pc.onicecandidate = e => {
-      if (S.pc !== pc || !e.candidate) return;
-      const type = e.candidate.type || 'unspecified';
-      candidateTypes.add(type); log('Route available: ' + type + '/' + (e.candidate.protocol || '?'));
-    };
-    pc.onicecandidateerror = e => { if (S.pc === pc) log('ICE server response ' + (e.errorCode || 'unavailable')); };
-    pc.oniceconnectionstatechange = () => { if (S.pc === pc) log('ICE: ' + pc.iceConnectionState); };
-    let disconnectedTimer;
-    pc.onconnectionstatechange = () => {
-      clearTimeout(disconnectedTimer);
-      if (S.pc !== pc) return;
-      log('Connection: ' + pc.connectionState);
-      if (pc.connectionState === 'connected') pairStats();
-      if (pc.connectionState === 'disconnected') {
-        status('Connection interrupted. Keeping the session open for the network to return.', 'warn');
-        disconnectedTimer = addTimer(() => { if (S.pc === pc && pc.connectionState === 'disconnected') hooks.onFailed?.(); }, 12000);
-      } else if (pc.connectionState === 'failed') { log(routeHint()); hooks.onFailed?.(); }
-    };
-    return pc;
-  }
-  function waitIce(pc, ms = 10000) {
-    if (pc.iceGatheringState === 'complete') return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      let timer;
-      const finish = () => {
-        clearTimeout(timer);
-        pc.removeEventListener('icegatheringstatechange', changed);
-        pc.removeEventListener('signalingstatechange', closed);
-        if (pc.signalingState === 'closed' || S.pc !== pc) reject(Error('Pairing was cancelled.'));
-        else resolve();
-      };
-      const changed = () => { if (pc.iceGatheringState === 'complete') finish(); };
-      const closed = () => { if (pc.signalingState === 'closed') finish(); };
-      pc.addEventListener('icegatheringstatechange', changed);
-      pc.addEventListener('signalingstatechange', closed);
-      timer = setTimeout(finish, ms);
-    });
-  }
-  async function pairStats() {
-    const pc = S.pc;
-    try {
-      const stats = await pc?.getStats(); if (!stats || pc !== S.pc) return;
-      let pair, selected;
-      stats.forEach(x => {
-        if (x.type === 'transport' && x.selectedCandidatePairId) selected = x.selectedCandidatePairId;
-        if (x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded') pair = x;
-      });
-      pair = stats.get(selected) || pair;
-      if (!pair) { log('Browser has not reported a selected route.'); return; }
-      const l = stats.get(pair.localCandidateId), r = stats.get(pair.remoteCandidateId);
-      const route = (l?.candidateType || '?') + ' / ' + (l?.protocol || '?') + ' → ' + (r?.candidateType || '?') + ' / ' + (r?.protocol || '?');
-      const rtt = Number.isFinite(pair.currentRoundTripTime) ? ' · ' + Math.round(pair.currentRoundTripTime * 1000) + ' ms round trip' : '';
-      log('Selected route: ' + route + rtt);
-      if ($('routeText')) $('routeText').textContent = 'WebRTC route: ' + route;
-    } catch { log('Browser route statistics unavailable'); }
-  }
-  window.BeamSyncCore = {$,enc,dec,STUN,LAN,S,hooks,log,show,status,progress,addTimer,clearTimers,fmtBytes,
-    randId,hex,b64u,unb64u,beginAttempt,hardClose,makePC,wireChannel,waitIce,pairStats};
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id),enc=new TextEncoder(),dec=new TextDecoder();
+const STUN={iceServers:[{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun.nextcloud.com:443'}],iceCandidatePoolSize:2};
+const LAN={iceServers:[]};
+const S={pairing:'direct',role:null,stage:'idle',attempt:0,pc:null,dc:null,directRescueRound:0,timers:[]};
+const hooks={onConnected:null,onFailed:null,onMessage:null,onClosed:null};
+function log(s){const el=$('log');if(!el)return;el.textContent+=`\n[${new Date().toLocaleTimeString()}] ${s}`;el.scrollTop=el.scrollHeight}
+function show(id,v=true){$(id)?.classList.toggle('hidden',!v)}
+function status(s,c=''){const el=$('status');if(el){el.className='status '+c;el.textContent=s}log(s)}
+function progress(s,c='subtle'){const el=$('pairProgress');if(el){el.className='status '+c;el.textContent=s}}
+function addTimer(fn,ms){const t=setTimeout(fn,ms);S.timers.push(t);return t}
+function clearTimers(){for(const t of S.timers)clearTimeout(t);S.timers=[]}
+function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return(n/1024).toFixed(1)+' KiB';if(n<1073741824)return(n/1048576).toFixed(1)+' MiB';return(n/1073741824).toFixed(2)+' GiB'}
+function randId(n=10){const b=new Uint8Array(n);crypto.getRandomValues(b);return[...b].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function hex(buf){return[...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function b64u(bytes){let s='';for(let i=0;i<bytes.length;i+=32768)s+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function unb64u(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const x=atob(s),o=new Uint8Array(x.length);for(let i=0;i<x.length;i++)o[i]=x.charCodeAt(i);return o}
+function beginAttempt(){S.attempt++;clearTimers();S.directRescueRound=0;return S.attempt}
+function hardClose(){clearTimers();try{S.dc?.close()}catch{}try{S.pc?.close()}catch{}S.dc=null;S.pc=null}
+function candidateInfo(c){const s=c?.candidate||'',t=c?.type||(s.match(/ typ (host|srflx|prflx|relay)/)||[])[1]||'unknown',p=c?.protocol||(s.match(/candidate:\S+ \d+ (udp|tcp)/i)||[])[1]||'?';return`${t}/${String(p).toLowerCase()}`}
+function wireChannel(c){S.dc=c;S.dc.binaryType='arraybuffer';log(`DataChannel ${S.role==='A'?'created':'received'}; ordered=${S.dc.ordered}`);S.dc.onopen=()=>hooks.onConnected?.();S.dc.onclose=()=>{log('DataChannel closed');hooks.onClosed?.()};S.dc.onerror=e=>log('DataChannel error: '+(e?.error?.message||e?.message||'unknown'));S.dc.onmessage=e=>hooks.onMessage?.(e)}
+function makePC(mode){try{S.pc?.close()}catch{}S.pc=new RTCPeerConnection(mode==='lan'?LAN:STUN);const p=S.pc;p.ondatachannel=e=>wireChannel(e.channel);p.onicecandidate=e=>{if(e.candidate)log('ICE candidate: '+candidateInfo(e.candidate));else log('ICE gathering signaled complete')};p.onicecandidateerror=e=>log(`ICE candidate error: ${e.errorCode||''} ${e.errorText||''}`);p.onicegatheringstatechange=()=>log('ICE gathering: '+p.iceGatheringState);p.oniceconnectionstatechange=()=>{log('ICE: '+p.iceConnectionState);if(['connected','completed','failed'].includes(p.iceConnectionState))pairStats()};p.onconnectionstatechange=()=>{log('Peer: '+p.connectionState);if(['connected','failed'].includes(p.connectionState))pairStats();if(p.connectionState==='failed')hooks.onFailed?.()};return p}
+function waitIce(p,ms=18000){if(p.iceGatheringState==='complete')return Promise.resolve();return new Promise(r=>{let done=false;const finish=why=>{if(done)return;done=true;p.removeEventListener('icegatheringstatechange',chg);log('ICE gathering finished by '+why);r()},chg=()=>{if(p.iceGatheringState==='complete')finish('browser completion')};p.addEventListener('icegatheringstatechange',chg);setTimeout(()=>finish('timeout'),ms)})}
+async function pairStats(){try{const stats=await S.pc?.getStats();if(!stats)return;let pair;stats.forEach(x=>{if(x.type==='candidate-pair'&&(x.nominated||x.state==='succeeded'))pair=pair||x});if(!pair)return;const l=stats.get(pair.localCandidateId),r=stats.get(pair.remoteCandidateId),route=`${l?.candidateType||'?'} / ${l?.protocol||'?'} → ${r?.candidateType||'?'} / ${r?.protocol||'?'}`;log('Selected route: '+route);if($('routeText'))$('routeText').textContent=`WebRTC DataChannel is open. Route: ${route}.`}catch(e){log('Stats unavailable: '+e.message)}}
+window.BeamSyncCore={$,enc,dec,STUN,LAN,S,hooks,log,show,status,progress,addTimer,clearTimers,fmtBytes,randId,hex,b64u,unb64u,beginAttempt,hardClose,makePC,wireChannel,waitIce,pairStats};
 })();
