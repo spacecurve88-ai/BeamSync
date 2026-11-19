@@ -8,12 +8,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="BeamSync">
-<link rel="manifest" href="./manifest.webmanifest?v=14-r10">
-<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=14-r10">
-<link rel="stylesheet" href="./app.css?v=14-r10">
+<link rel="manifest" href="./manifest.webmanifest?v=14-r14">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png?v=14-r14">
+<link rel="stylesheet" href="./app.css?v=14-r14">
 <title>BeamSync</title>
-<script src="./vendor/qrcode.min.js?v=14-r10"></script>
-<script src="./vendor/jsQR.js?v=14-r10"></script>
+<script src="./vendor/qrcode.min.js?v=14-r14"></script>
+<script src="./vendor/jsQR.js?v=14-r14"></script>
 </head>
 <body>
 <div class="shell">
@@ -117,15 +117,16 @@
 
     <details class="card details">
       <summary>Diagnostics</summary>
-      <pre id="log">BeamSync classic diagnostics</pre>
+      <pre id="transfer-timings" aria-label="Latest transfer timings on this device" hidden></pre><pre id="log">BeamSync classic diagnostics</pre>
     </details>
   </main>
 </div>
-<script src="./js/core.js?v=14-r10"></script>
-<script src="./js/pairing.js?v=14-r10"></script>
-<script src="./js/sha256.js?v=14-r10"></script>
-<script src="./js/recovery.js?v=14-r10"></script>
-<script src="./js/transfer.js?v=14-r10"></script>
-<script src="./js/main.js?v=14-r10"></script>
+<script src="./js/core.js?v=14-r14"></script>
+<script src="./js/image-preflight.js?v=14-r14"></script>
+<script src="./js/pairing.js?v=14-r14"></script>
+<script src="./js/sha256.js?v=14-r14"></script>
+<script src="./js/recovery.js?v=14-r14"></script>
+<script src="./js/transfer.js?v=14-r14"></script>
+<script src="./js/main.js?v=14-r14"></script>
 </body>
 </html>
