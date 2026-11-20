@@ -9,6 +9,8 @@ const liveHost = 'beamsync.hatchable.site';
 
 export default async function (req, res) {
   const host = typeof req.headers?.host === 'string' ? req.headers.host.toLowerCase() : '';
+  // Hatchable's nginx ingress overwrites X-Real-IP from remote_addr. Never trust forwarding chains here.
+  const sourceAddress = req.headers?.['x-real-ip'];
   const live = host === liveHost;
   const enabled = (live || host === draftHost) &&
     (req.headers.origin === undefined || req.headers.origin === 'https://' + host);
@@ -19,5 +21,5 @@ export default async function (req, res) {
     await scheduler.at(new Date(tick * 60000), '/api/jobs/quick-pair-expire',
       {name:'beamsync-expire-' + tick, payload:{}});
   };
-  return handlePair(req,res,rooms,schedulePrune,enabled);
+  return handlePair(req,res,rooms,schedulePrune,enabled,sourceAddress);
 }
