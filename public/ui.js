@@ -119,12 +119,14 @@ function makeScanner(onResult, onPaste) {
   async function readImage(file) {
     stop();
     const current = epoch;
-    if (!file || file.size > 12 * 1024 * 1024) {
-      write('scan-note', 'Choose a QR image under 12 MiB.');
-      return;
-    }
-    const objectUrl = URL.createObjectURL(file);
+    let objectUrl = '';
     try {
+      await window.BeamSyncImagePreflight.inspect(file, {
+        maxBytes: 12 * 1024 * 1024,
+        sizeMessage: 'Choose a QR image under 12 MiB.'
+      });
+      if (current !== epoch) return;
+      objectUrl = URL.createObjectURL(file);
       const image = new Image();
       image.src = objectUrl;
       await image.decode();
@@ -132,9 +134,10 @@ function makeScanner(onResult, onPaste) {
       const value = decode(image, image.naturalWidth, image.naturalHeight);
       if (value) result(value);
       else write('scan-note', 'No readable QR found. Try a closer image or paste the link.');
-    } catch {
-      if (current === epoch) write('scan-note', 'This image could not be read. Paste the invitation link instead.');
-    } finally { URL.revokeObjectURL(objectUrl); }
+    } catch (error) {
+      if (current === epoch) write('scan-note', error?.name === 'ImagePreflightError' ? error.message
+        : 'This image could not be read. Paste the invitation link instead.');
+    } finally { if (objectUrl) URL.revokeObjectURL(objectUrl); }
   }
   listen('camera-start', 'click', camera);
   listen('camera-stop', 'click', stop);
