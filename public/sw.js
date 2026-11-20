@@ -5,7 +5,7 @@ const readyKey = '/__beamsync_package_ready__';
 const shells = new Map([['/','/index.html'],['/index.html','/index.html'],['/classic.html','/classic.html']]);
 const assets = [
   '/ui.css','/app.css','/app.js','/ui.js','/manifest.webmanifest',
-  '/js/core.js','/js/pairing.js','/js/main.js','/js/transfer.js','/js/sha256.js','/js/recovery.js',
+  '/js/core.js','/js/image-preflight.js','/js/pairing.js','/js/main.js','/js/transfer.js','/js/sha256.js','/js/recovery.js',
   '/js/devices.js','/js/share.js','/js/signal.js','/js/quick-pair.js',
   '/vendor/jsQR.js','/vendor/qrcode.min.js','/icons/apple-touch-icon.png','/icons/icon-192.png','/icons/icon-512.png'
 ];
